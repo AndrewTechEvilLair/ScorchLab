@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.1 — System persona added to all three providers; JSON rules moved to system prompt for better compliance
+<!-- v2.2 — Separate honest scoring persona for quality check; quality analysis always re-runs on new image
+     v2.1 — System persona added to all three providers; JSON rules moved to system prompt for better compliance
      v2.0 — Results now match LaserGRBL screens exactly (Screen 1: Import Raster Image / Screen 2: Target Image); field names, order and categories match the UI
      v1.9 — Reset score and results when a new image is selected
      v1.8 — API key validation before any AI calls; checking/valid/invalid status badge; Google tab first; suitability score gated on valid key
@@ -1045,7 +1046,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v2.1 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.2 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1471,6 +1472,9 @@ function handleFile(file) {
     document.getElementById('procPanel').style.display = 'block';
 
     checkAPIGate();
+    // Always explicitly trigger quality analysis on new image if key is valid
+    // Don't rely on display:none gate check which can miss re-runs
+    if (_keyValid) analyzeImageQuality();
   };
   reader.readAsDataURL(file);
 }
@@ -1478,10 +1482,11 @@ function handleFile(file) {
 // ── Provider API calls ────────────────────────────────────────────────────────
 // FIX #1: callActiveProvider defined BEFORE analyzeImageQuality which calls it
 
-async function callActiveProvider(key, prompt) {
-  if (_activeProvider === 'anthropic') return await callAnthropic(key, prompt);
-  if (_activeProvider === 'openai')    return await callOpenAI(key, prompt);
-  return await callGoogle(key, prompt);
+async function callActiveProvider(key, prompt, systemPrompt) {
+  const sys = systemPrompt !== undefined ? systemPrompt : SYSTEM_PERSONA;
+  if (_activeProvider === 'anthropic') return await callAnthropic(key, prompt, sys);
+  if (_activeProvider === 'openai')    return await callOpenAI(key, prompt, sys);
+  return await callGoogle(key, prompt, sys);
 }
 
 // ── Persona / system prompt ───────────────────────────────────────────────────
@@ -1507,7 +1512,18 @@ Your response rules — follow these exactly, no exceptions:
 9. "bw_threshold_value" is an integer 0-255
 10. Never truncate the JSON. Always complete the full object.`;
 
-async function callAnthropic(apiKey, prompt) {
+// Separate lighter persona for suitability scoring — no field-name rules,
+// just honest critical assessment of how well an image will engrave
+const SYSTEM_PERSONA_QUALITY = `You are a brutally honest laser engraving quality assessor. Your only job is to evaluate how well an image will engrave on a laser engraver.
+
+Scoring rules:
+- Be critical and realistic. Most images score 40-70. Only exceptional images score above 80.
+- High contrast simple graphics: 75-90. Photos with good contrast: 55-75. Busy complex scenes: 30-55. Low res or noisy images: 10-40.
+- Heavy complexity, busy backgrounds, and many overlapping elements should significantly lower the score.
+- Output ONLY a raw JSON object. Zero markdown. Zero backticks. Zero prose.
+- Always complete the full JSON object. Never truncate.`;
+
+async function callAnthropic(apiKey, prompt, systemPrompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -1519,7 +1535,7 @@ async function callAnthropic(apiKey, prompt) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
-      system: SYSTEM_PERSONA,
+      system: systemPrompt,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: uploadedFile.type, data: uploadedBase64 } },
         { type: 'text', text: prompt }
@@ -1531,7 +1547,7 @@ async function callAnthropic(apiKey, prompt) {
   return data.content?.[0]?.text || '';
 }
 
-async function callOpenAI(apiKey, prompt) {
+async function callOpenAI(apiKey, prompt, systemPrompt) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -1542,7 +1558,7 @@ async function callOpenAI(apiKey, prompt) {
       model: 'gpt-4o',
       max_tokens: 2000,
       messages: [
-        { role: 'system', content: SYSTEM_PERSONA },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: [
           { type: 'image_url', image_url: { url: 'data:' + uploadedFile.type + ';base64,' + uploadedBase64 } },
           { type: 'text', text: prompt }
@@ -1555,14 +1571,14 @@ async function callOpenAI(apiKey, prompt) {
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function callGoogle(apiKey, prompt) {
+async function callGoogle(apiKey, prompt, systemPrompt) {
   const res = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PERSONA }] },
+        systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ parts: [
           { inline_data: { mime_type: uploadedFile.type, data: uploadedBase64 } },
           { text: prompt }
@@ -1593,7 +1609,7 @@ async function analyzeImageQuality() {
 Score 0-100. Ratings: good/warn/bad. High contrast=good, clean bg=good, fine lines+hi-res=good, photo complexity=harder, low res=bad.`;
 
   try {
-    const text    = await callActiveProvider(key, prompt);
+    const text    = await callActiveProvider(key, prompt, SYSTEM_PERSONA_QUALITY);
     const raw     = text.match(/\{[\s\S]*\}/)?.[0] || null;
 
     // If no JSON block found at all, show the raw text as a reason
