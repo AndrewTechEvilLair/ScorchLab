@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v1.4 — Added Buy Me a Coffee button to footer
+<!-- v1.6 — Move status bar above analyze button; nuclear JSON extraction (immune to markdown fences)
+     v1.5 — Fix JSON parsing (markdown fences), fix score 0/100 bug, always show reason on failure
+     v1.4 — Added Buy Me a Coffee button to footer
      v1.3 — Bug fixes:
   1. callActiveProvider defined before analyzeImageQuality (was undefined at call time)
   2. imageAnalysisContent + detailedContent elements added to resultsBlock HTML
@@ -958,15 +960,6 @@
 
     </div>
 
-    <button class="btn-analyze" id="btnAnalyze" onclick="runAnalysis()" disabled style="opacity:0.35;"
-      title="Upload an image and enter an API key to enable">
-      ⚡ Analyze &amp; Generate Settings
-    </button>
-    <div style="text-align:center;margin-top:16px;">
-      <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="AndrewTech" data-color="#FFDD00" data-emoji="" data-font="Bree" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
-    </div>
-  </div>
-
   <!-- Thinking indicator -->
   <div id="thinkingBlock">
     <div class="laser-beam"></div>
@@ -975,6 +968,15 @@
 
   <!-- Error -->
   <div id="errorBlock"></div>
+
+    <button class="btn-analyze" id="btnAnalyze" onclick="runAnalysis()" disabled style="opacity:0.35;"
+      title="Upload an image and enter an API key to enable">
+      ⚡ Analyze &amp; Generate Settings
+    </button>
+    <div style="text-align:center;margin-top:16px;">
+      <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="AndrewTech" data-color="#FFDD00" data-emoji="" data-font="Bree" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+    </div>
+  </div>
 
   <!-- Results -->
   <div id="resultsBlock">
@@ -1006,7 +1008,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v1.6 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1422,7 +1424,15 @@ Score 0-100: high contrast=good, clean background=good, fine lines+high res=good
 
   try {
     const text    = await callActiveProvider(key, prompt);
-    const raw     = text.match(/\{[\s\S]*\}/)?.[0] || '{}';
+    const raw     = text.match(/\{[\s\S]*\}/)?.[0] || null;
+
+    // If no JSON block found at all, show the raw text as a reason
+    if (!raw) {
+      document.getElementById('confScore').textContent = '— / 100';
+      document.getElementById('confNote').textContent  = text.slice(0, 200) || 'No response received.';
+      return;
+    }
+
     const cleaned = raw
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/[\u2018\u2019]/g, "'")
@@ -1430,13 +1440,24 @@ Score 0-100: high contrast=good, clean background=good, fine lines+high res=good
     let json;
     try { json = JSON.parse(cleaned); }
     catch { json = JSON.parse(raw); }
-    const score   = json.score || 0;
-    const factors = json.factors || [];
-    const color   = score >= 75 ? 'var(--green)' : score >= 50 ? '#ffaa00' : 'var(--red)';
 
+    const score   = json.score ?? null;  // ?? so score of 0 is valid
+    const factors = json.factors || [];
+    const note    = json.note || 'No summary provided.';
+
+    if (score === null) {
+      document.getElementById('confScore').textContent = '— / 100';
+      document.getElementById('confNote').textContent  = note;
+      document.getElementById('confFactors').innerHTML = factors.map(f =>
+        `<div class="conf-factor ${f.rating}" title="${f.detail}">${f.label}: ${f.rating.toUpperCase()}</div>`
+      ).join('');
+      return;
+    }
+
+    const color = score >= 75 ? 'var(--green)' : score >= 50 ? '#ffaa00' : 'var(--red)';
     document.getElementById('confScore').textContent = score + ' / 100';
     document.getElementById('confScore').style.color = color;
-    document.getElementById('confNote').textContent  = json.note || '';
+    document.getElementById('confNote').textContent  = note;
 
     const fill = document.getElementById('confFill');
     fill.style.background = color;
@@ -1447,7 +1468,8 @@ Score 0-100: high contrast=good, clean background=good, fine lines+high res=good
     ).join('');
 
   } catch (err) {
-    document.getElementById('confNote').textContent = 'Could not analyze: ' + err.message;
+    document.getElementById('confScore').textContent = '— / 100';
+    document.getElementById('confNote').textContent = 'Analysis error: ' + err.message;
   }
 }
 
@@ -1476,9 +1498,11 @@ async function runAnalysis() {
 
   try {
     const text  = await callActiveProvider(apiKey, prompt);
-    const clean = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3)).replace(/```/g, '').trim();
-    const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Could not parse AI response. Raw: ' + text.slice(0, 300));
+    // Extract JSON by finding first { and last } — immune to any markdown wrapping
+    const firstBrace = text.indexOf('{');
+    const lastBrace  = text.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1) throw new Error('Could not parse AI response. Raw: ' + text.slice(0, 300));
+    const jsonMatch = [text.slice(firstBrace, lastBrace + 1)];
     const sanitized = jsonMatch[0]
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/[\u2018\u2019]/g, "'")
