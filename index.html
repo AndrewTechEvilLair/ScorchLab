@@ -1267,7 +1267,7 @@ function setKeyStatus(provider, state) {
   }
 }
 
-async async function validateKey(provider, key) {
+async function validateKey(provider, key) {
   // Make a minimal cheap test call to confirm the key works
   try {
     if (provider === 'google') {
@@ -1421,24 +1421,26 @@ function loadSavedKeys() {
   else checkAPIGate();
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadSavedKeys(); });
-
 // ── File handling ─────────────────────────────────────────────────────────────
 let uploadedFile   = null;
 let uploadedBase64 = null;
 
-const fileInput  = document.getElementById('fileInput');
-const uploadZone = document.getElementById('uploadZone');
+document.addEventListener('DOMContentLoaded', () => {
+  loadSavedKeys();
 
-fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+  const fileInput  = document.getElementById('fileInput');
+  const uploadZone = document.getElementById('uploadZone');
 
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => {
-  e.preventDefault();
-  uploadZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
+  fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
 });
 
 function resetAnalysis() {
