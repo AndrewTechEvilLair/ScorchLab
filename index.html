@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.9 — Correct dither algorithm names from actual LaserGRBL dropdown: Burks/Jarvis/Sierra2/Sierra3/SierraLight/Random
+<!-- v2.11 — Bug fixes: async on triggerKeyValidation; webp added to file accept attribute
+     v2.10 — Bug fixes: async keyword on validateKey; autoSaveKey uses provider-specific key; render cleanup
+     v2.9 — Correct dither algorithm names from actual LaserGRBL dropdown: Burks/Jarvis/Sierra2/Sierra3/SierraLight/Random
      v2.8 — Dithering algorithm selection: 8 algorithms with laser-specific guidance added to schema, render, exports
      v2.7 — Correct slider ranges from software: brightness/contrast 40-160 (defaults 114/113), white clip 0-100 (default 0)
      v2.6 — White clip default corrected to 0; Centerline added to BW threshold tools; persona rules updated with defaults
@@ -787,7 +789,7 @@
   <header>
     <div class="logo-icon">⚡</div>
     <div>
-      <h1>Laser<span>GRBL</span> Advisor</h1>
+      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.11</span></h1>
       <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
     </div>
   </header>
@@ -800,7 +802,7 @@
       <div class="form-group full">
         <label>Image File (PNG / JPG / BMP)</label>
         <div class="upload-zone" id="uploadZone">
-          <input type="file" id="fileInput" accept="image/png,image/jpeg,image/bmp,image/gif">
+          <input type="file" id="fileInput" accept="image/png,image/jpeg,image/bmp,image/gif,image/webp">
           <div class="upload-icon">📂</div>
           <p>DRAG & DROP OR CLICK TO SELECT</p>
           <div class="filename" id="filename"></div>
@@ -1053,7 +1055,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v2.9 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.11 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1265,7 +1267,7 @@ function setKeyStatus(provider, state) {
   }
 }
 
-async function validateKey(provider, key) {
+async async function validateKey(provider, key) {
   // Make a minimal cheap test call to confirm the key works
   try {
     if (provider === 'google') {
@@ -1350,7 +1352,7 @@ function handleSave(provider) {
   }
 }
 
-function triggerKeyValidation(provider, key) {
+async function triggerKeyValidation(provider, key) {
   // Debounce: wait 800ms after user stops typing before hitting the API
   clearTimeout(_validateTimer);
   setKeyStatus(provider, 'checking');
@@ -1372,7 +1374,8 @@ function autoSaveKey(provider) {
     const key = document.getElementById('key-' + provider).value.trim();
     if (key) localStorage.setItem('lasergrbl_key_' + provider, key);
   }
-  const key = getActiveKey();
+  // Use THIS provider's key directly (not getActiveKey which returns active tab's key)
+  const key = document.getElementById('key-' + provider).value.trim();
   if (key.length > 8) {
     triggerKeyValidation(provider, key);
   } else {
@@ -1831,7 +1834,8 @@ function renderResults(r) {
         ${settingRow('Brightness', s1.brightness ?? 114, '/ 160')}
         ${settingRow('Contrast', s1.contrast ?? 113, '/ 160')}
         ${settingRow('White Clip', s1.white_clip ?? 0, '/ 100')}
-        ${(s1.conversion_tool === '1bit BW Dithering' && s1.dither_algorithm ? settingRow('Dither Algorithm', s1.dither_algorithm, '') : '') + ((s1.conversion_tool === 'Line To Line' || s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') ? settingRow('BW Threshold', s1.bw_threshold_value ?? 128, '/ 255') : ''}
+        ${s1.conversion_tool === '1bit BW Dithering' && s1.dither_algorithm ? settingRow('Dither Algorithm', s1.dither_algorithm, '') : ''}
+        ${(s1.conversion_tool === 'Line To Line' || s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') ? settingRow('BW Threshold', s1.bw_threshold_value ?? 128, '/ 255') : ''}
       </div>
 
       <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Conversion Tool</div>
