@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaserGRBL Settings Advisor</title>
+<!-- v1.3 — Bug fixes:
+  1. callActiveProvider defined before analyzeImageQuality (was undefined at call time)
+  2. imageAnalysisContent + detailedContent elements added to resultsBlock HTML
+  3. Image preview thumbnail now shows (img display:none removed, set visible in handleFile)
+  4. Auto-Detect now times out gracefully (5s) instead of hanging forever
+  5. grblParamsList element added to HTML (was referenced but missing)
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700;900&display=swap');
+
+  :root {
+    --bg:       #0a0c0f;
+    --panel:    #0f1318;
+    --border:   #1e2530;
+    --accent:   #ff6b1a;
+    --accent2:  #ffaa44;
+    --cyan:     #00d4ff;
+    --green:    #39ff6e;
+    --red:      #ff3b5c;
+    --text:     #ccd6f6;
+    --muted:    #556080;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Exo 2', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,107,26,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,107,26,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 48px;
+  }
+
+  .logo-icon {
+    width: 48px;
+    height: 48px;
+    border: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: var(--accent);
+    flex-shrink: 0;
+    position: relative;
+    clip-path: polygon(12px 0%, 100% 0%, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0% 100%, 0% 12px);
+    animation: pulse-border 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,26,0.4); }
+    50% { box-shadow: 0 0 20px 4px rgba(255,107,26,0.2); }
+  }
+
+  header h1 {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #fff;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  header p {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 28px;
+    margin-bottom: 20px;
+    position: relative;
+    clip-path: polygon(16px 0%, 100% 0%, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0% 100%, 0% 16px);
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title::before {
+    content: '▶';
+    font-size: 8px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-group.full { grid-column: 1 / -1; }
+
+  label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  select, input[type="text"], input[type="number"] {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    clip-path: polygon(8px 0%, 100% 0%, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0% 100%, 0% 8px);
+    width: 100%;
+  }
+
+  select:focus, input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(255,107,26,0.3);
+  }
+
+  select option { background: #1a1e26; }
+
+  .upload-zone {
+    border: 2px dashed var(--border);
+    padding: 36px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: rgba(255,107,26,0.02);
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(255,107,26,0.06);
+  }
+
+  .upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .upload-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    opacity: 0.6;
+  }
+
+  .upload-zone p {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .upload-zone .filename {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--green);
+    margin-top: 8px;
+  }
+
+  /* FIX #3: Image preview — was always display:none, now shown properly */
+  #imagePreviewWrap {
+    display: none;
+    margin-top: 16px;
+    text-align: center;
+  }
+
+  #imagePreview {
+    max-height: 180px;
+    max-width: 100%;
+    border: 1px solid var(--border);
+    opacity: 0.9;
+    display: block; /* FIX: was display:none inline style, now properly shown */
+    margin: 0 auto;
+  }
+
+  .img-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+  }
+
+  .img-meta span { color: var(--cyan); }
+
+  .btn-analyze {
+    background: linear-gradient(135deg, var(--accent), #ff8c00);
+    color: #fff;
+    border: none;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 16px 40px;
+    cursor: pointer;
+    clip-path: polygon(12px 0%, 100% 0%, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0% 100%, 0% 12px);
+    transition: all 0.2s;
+    width: 100%;
+    margin-top: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-analyze::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    transition: left 0.4s;
+  }
+
+  .btn-analyze:hover::before { left: 150%; }
+  .btn-analyze:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(255,107,26,0.4); }
+  .btn-analyze:active { transform: translateY(0); }
+  .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  #thinkingBlock {
+    display: none;
+    padding: 24px 0;
+    text-align: center;
+  }
+
+  .laser-beam {
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    overflow: hidden;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .laser-beam::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -40%;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+    animation: laser-scan 1.2s linear infinite;
+  }
+
+  @keyframes laser-scan {
+    to { left: 140%; }
+  }
+
+  #thinkingBlock p {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    animation: blink 1.4s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0.3; }
+  }
+
+  #resultsBlock { display: none; }
+
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .results-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    clip-path: polygon(6px 0%, 100% 0%, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0% 100%, 0% 6px);
+  }
+
+  .badge-ok     { background: rgba(57,255,110,0.15);  color: var(--green);  border: 1px solid rgba(57,255,110,0.3); }
+  .badge-warn   { background: rgba(255,170,0,0.15);   color: var(--accent2); border: 1px solid rgba(255,170,0,0.3); }
+  .badge-danger { background: rgba(255,59,92,0.15);   color: var(--red);    border: 1px solid rgba(255,59,92,0.3); }
+
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .setting-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    padding: 16px;
+    position: relative;
+    clip-path: polygon(8px 0%, 100% 0%, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0% 100%, 0% 8px);
+    animation: card-in 0.4s ease both;
+  }
+
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .setting-card:nth-child(1) { animation-delay: 0.05s; }
+  .setting-card:nth-child(2) { animation-delay: 0.10s; }
+  .setting-card:nth-child(3) { animation-delay: 0.15s; }
+  .setting-card:nth-child(4) { animation-delay: 0.20s; }
+  .setting-card:nth-child(5) { animation-delay: 0.25s; }
+  .setting-card:nth-child(6) { animation-delay: 0.30s; }
+
+  .setting-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 1px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .setting-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .setting-value {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: bold;
+    color: var(--accent2);
+    line-height: 1;
+  }
+
+  .setting-unit {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .setting-range {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .setting-range em {
+    color: var(--cyan);
+    font-style: normal;
+  }
+
+  .analysis-section {
+    margin-bottom: 16px;
+  }
+
+  .analysis-section h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .analysis-section h3::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .analysis-section p, .analysis-section li {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .analysis-section ul { padding-left: 20px; }
+  .analysis-section li::marker { color: var(--accent); }
+
+  .highlight-box {
+    background: rgba(255,107,26,0.07);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .warning-box {
+    background: rgba(255,59,92,0.07);
+    border-left: 3px solid var(--red);
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #ffb3bf;
+  }
+
+  .lasergrbl-tip {
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.15);
+    padding: 16px;
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.7;
+    clip-path: polygon(8px 0%, 100% 0%, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0% 100%, 0% 8px);
+  }
+
+  .lasergrbl-tip strong {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .image-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .chip.active {
+    border-color: var(--accent);
+    color: var(--accent2);
+    background: rgba(255,107,26,0.08);
+  }
+
+  #errorBlock {
+    display: none;
+    background: rgba(255,59,92,0.08);
+    border: 1px solid rgba(255,59,92,0.3);
+    padding: 16px 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--red);
+    margin-top: 16px;
+  }
+
+  footer {
+    margin-top: 48px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+  }
+
+  .export-success {
+    display: none;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    text-align: center;
+    margin-top: 10px;
+    letter-spacing: 2px;
+    animation: fade-in 0.3s ease;
+  }
+
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .provider-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+    margin-bottom: -1px;
+  }
+  .provider-tab:hover { color: var(--text); }
+  .provider-tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  .ptab-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  .provider-panel {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-top: none;
+    padding: 14px;
+  }
+
+  .provider-info {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .provider-info strong { color: var(--text); }
+  .provider-info a { color: var(--accent); text-decoration: none; margin-left: auto; }
+  .provider-info a:hover { text-decoration: underline; }
+
+  .key-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .key-row input { flex: 1; }
+
+  .btn-show {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 10px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    clip-path: polygon(6px 0%,100% 0%,100% calc(100% - 6px),calc(100% - 6px) 100%,0% 100%,0% 6px);
+  }
+  .btn-show:hover { color: var(--text); border-color: var(--muted); }
+
+  .key-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .save-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .saved-badge { color: var(--green); display: none; }
+  .btn-clear { background: none; border: none; color: var(--red); font-family: var(--mono); font-size: 10px; cursor: pointer; letter-spacing: 1px; display: none; padding: 0; }
+
+  .confidence-bar-wrap {
+    margin-bottom: 14px;
+    padding: 14px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    clip-path: polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px);
+  }
+
+  .confidence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .confidence-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .confidence-score {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+
+  .confidence-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s cubic-bezier(0.4,0,0.2,1);
+    width: 0%;
+  }
+
+  .confidence-factors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .conf-factor {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    letter-spacing: 1px;
+    border: 1px solid;
+  }
+
+  .conf-factor.good  { border-color: var(--green); color: var(--green); background: rgba(57,255,110,0.06); }
+  .conf-factor.warn  { border-color: #ffaa00;      color: #ffaa00;      background: rgba(255,170,0,0.06); }
+  .conf-factor.bad   { border-color: var(--red);   color: var(--red);   background: rgba(255,50,50,0.06); }
+
+  .confidence-note {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  @media (max-width: 640px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .settings-grid { grid-template-columns: 1fr 1fr; }
+    header h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo-icon">⚡</div>
+    <div>
+      <h1>Laser<span>GRBL</span> Advisor</h1>
+      <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
+    </div>
+  </header>
+
+  <div class="panel">
+    <div class="panel-title">Job Configuration</div>
+    <div class="form-grid">
+
+      <!-- Image Upload -->
+      <div class="form-group full">
+        <label>Image File (PNG / JPG / BMP)</label>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept="image/png,image/jpeg,image/bmp,image/gif">
+          <div class="upload-icon">📂</div>
+          <p>DRAG & DROP OR CLICK TO SELECT</p>
+          <div class="filename" id="filename"></div>
+        </div>
+        <!-- FIX #3: imagePreviewWrap shown by JS; img no longer has display:none inline style -->
+        <div id="imagePreviewWrap">
+          <img id="imagePreview" src="" alt="Preview">
+          <div class="img-meta">
+            <div>SIZE: <span id="imgSize">—</span></div>
+            <div>DIMENSIONS: <span id="imgDims">—</span></div>
+            <div>MODE: <span id="imgMode">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Provider -->
+      <div class="form-group full">
+        <label>AI Provider</label>
+        <div style="display:flex; gap:0; border-bottom:1px solid var(--border);">
+          <button type="button" class="provider-tab" id="tab-anthropic" onclick="switchProvider('anthropic')">
+            <span class="ptab-dot" style="background:#cc785c;"></span> Anthropic
+          </button>
+          <button type="button" class="provider-tab" id="tab-openai" onclick="switchProvider('openai')">
+            <span class="ptab-dot" style="background:#74aa9c;"></span> OpenAI
+          </button>
+          <button type="button" class="provider-tab active" id="tab-google" onclick="switchProvider('google')">
+            <span class="ptab-dot" style="background:#4285f4;"></span> Google
+          </button>
+        </div>
+
+        <div class="provider-panel" id="panel-anthropic" style="display:none;">
+          <div class="provider-info">
+            <strong>Claude Sonnet</strong> — Best image understanding, ~$0.005/analysis
+            <a href="https://console.anthropic.com/settings/keys" target="_blank">Get key →</a>
+          </div>
+          <div class="key-row">
+            <input type="password" id="key-anthropic" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('anthropic')">
+            <button type="button" class="btn-show" onclick="toggleVis('anthropic')" id="show-anthropic">SHOW</button>
+          </div>
+          <div class="key-actions">
+            <label class="save-label">
+              <input type="checkbox" id="save-anthropic" onchange="handleSave('anthropic')" style="accent-color:var(--accent);width:13px;height:13px;">
+              SAVE IN BROWSER
+            </label>
+            <span class="saved-badge" id="saved-anthropic">✓ SAVED</span>
+            <button type="button" class="btn-clear" id="clear-anthropic" onclick="clearKey('anthropic')">✕ CLEAR</button>
+          </div>
+        </div>
+
+        <div class="provider-panel" id="panel-openai" style="display:none;">
+          <div class="provider-info">
+            <strong>GPT-4o</strong> — Strong vision model, ~$0.007/analysis
+            <a href="https://platform.openai.com/api-keys" target="_blank">Get key →</a>
+          </div>
+          <div class="key-row">
+            <input type="password" id="key-openai" placeholder="sk-proj-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('openai')">
+            <button type="button" class="btn-show" onclick="toggleVis('openai')" id="show-openai">SHOW</button>
+          </div>
+          <div class="key-actions">
+            <label class="save-label">
+              <input type="checkbox" id="save-openai" onchange="handleSave('openai')" style="accent-color:var(--accent);width:13px;height:13px;">
+              SAVE IN BROWSER
+            </label>
+            <span class="saved-badge" id="saved-openai">✓ SAVED</span>
+            <button type="button" class="btn-clear" id="clear-openai" onclick="clearKey('openai')">✕ CLEAR</button>
+          </div>
+        </div>
+
+        <div class="provider-panel" id="panel-google">
+          <div class="provider-info">
+            <strong>Gemini 2.5 Flash</strong> — Best multimodal model, ~$0.002/analysis
+            <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key →</a>
+          </div>
+          <div class="key-row">
+            <input type="password" id="key-google" placeholder="AIza…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('google')">
+            <button type="button" class="btn-show" onclick="toggleVis('google')" id="show-google">SHOW</button>
+          </div>
+          <div class="key-actions">
+            <label class="save-label">
+              <input type="checkbox" id="save-google" onchange="handleSave('google')" style="accent-color:var(--accent);width:13px;height:13px;">
+              SAVE IN BROWSER
+            </label>
+            <span class="saved-badge" id="saved-google">✓ SAVED</span>
+            <button type="button" class="btn-clear" id="clear-google" onclick="clearKey('google')">✕ CLEAR</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Image Analysis / Suitability Score -->
+      <div class="form-group full" id="procPanel" style="display:none;">
+        <div class="panel-title">Image Analysis</div>
+        <div class="confidence-bar-wrap" id="confidenceWrap" style="display:none;">
+          <div class="confidence-header">
+            <div class="confidence-title">◈ Engrave Suitability Score</div>
+            <div class="confidence-score" id="confScore">—</div>
+          </div>
+          <div class="confidence-track">
+            <div class="confidence-fill" id="confFill"></div>
+          </div>
+          <div class="confidence-factors" id="confFactors"></div>
+          <div class="confidence-note" id="confNote"></div>
+        </div>
+        <div id="procGateMsg" style="display:none;font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--muted);padding:10px 0;">
+          🔑 ENTER AN API KEY ABOVE TO ENABLE IMAGE ANALYSIS
+        </div>
+      </div>
+
+      <!-- Laser Type -->
+      <div class="form-group">
+        <label>Laser Type</label>
+        <div style="display:flex; gap:10px; align-items:stretch;">
+          <select id="laserType" style="flex:1;">
+            <option value="">— Select laser —</option>
+            <optgroup label="Diode Lasers">
+              <option value="diode_5w">Diode 5W (Sculpfun S9, NEJE A40630)</option>
+              <option value="diode_10w">Diode 10W (Sculpfun S10, xTool D1 Pro 10W)</option>
+              <option value="diode_20w">Diode 20W (Sculpfun S30 Pro, NEJE 4 Max)</option>
+              <option value="diode_40w">Diode 40W (Sculpfun S30 Ultra)</option>
+            </optgroup>
+            <optgroup label="CO2 Lasers">
+              <option value="co2_30w">CO2 30W (K40 style)</option>
+              <option value="co2_40w">CO2 40W</option>
+              <option value="co2_60w">CO2 60W</option>
+              <option value="co2_80w">CO2 80W+</option>
+            </optgroup>
+            <optgroup label="Fiber Lasers">
+              <option value="fiber_20w">Fiber 20W (MOPA / JPT)</option>
+              <option value="fiber_50w">Fiber 50W+</option>
+            </optgroup>
+          </select>
+          <!-- FIX #4: Auto-detect button now has timeout logic -->
+          <button type="button" id="btnDetect" onclick="detectLaser()"
+            style="white-space:nowrap;font-family:var(--mono);font-size:10px;letter-spacing:1px;background:rgba(0,212,255,0.1);border:1px solid var(--cyan);color:var(--cyan);padding:0 14px;cursor:pointer;"
+            title="Auto-detect laser from USB">⚡ AUTO-DETECT</button>
+        </div>
+        <div id="detectStatus" style="display:none;font-family:var(--mono);font-size:11px;margin-top:8px;padding:8px;border:1px solid var(--border);"></div>
+        <!-- FIX #5: grblParamsList element added -->
+        <div id="grblParams" style="display:none;margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+          <div id="grblParamsList"></div>
+        </div>
+      </div>
+
+      <!-- Material -->
+      <div class="form-group">
+        <label>Material</label>
+        <select id="material">
+          <option value="">— Select material —</option>
+          <optgroup label="Wood">
+            <option value="wood_balsa">Balsa / thin craft wood</option>
+            <option value="wood_plywood">Plywood (birch, poplar)</option>
+            <option value="wood_hardwood">Hardwood (oak, maple, walnut)</option>
+            <option value="wood_mdf">MDF / HDF</option>
+          </optgroup>
+          <optgroup label="Acrylic / Plastic">
+            <option value="acrylic_cast">Acrylic — Cast (engraves white)</option>
+            <option value="acrylic_extruded">Acrylic — Extruded (cuts better)</option>
+            <option value="leather">Leather / Faux leather</option>
+          </optgroup>
+          <optgroup label="Metal">
+            <option value="anodized_alum">Anodized Aluminum</option>
+            <option value="bare_metal_coat">Bare Metal + Cermark / Moly lube</option>
+            <option value="stainless">Stainless Steel (fiber only)</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="slate">Slate / Stone</option>
+            <option value="glass">Glass</option>
+            <option value="cardboard">Cardboard / Chipboard</option>
+            <option value="fabric">Fabric / Denim</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <!-- Operation Type -->
+      <div class="form-group">
+        <label>Operation Type</label>
+        <select id="operationType">
+          <option value="engrave_photo">Photo Engraving (grayscale/dither)</option>
+          <option value="engrave_vector">Vector / Line Engraving</option>
+          <option value="engrave_fill">Fill / Solid Area Engraving</option>
+          <option value="cut">Cutting</option>
+          <option value="mark_metal">Metal Marking</option>
+        </select>
+      </div>
+
+      <!-- Output Size -->
+      <div class="form-group">
+        <label>Desired Output Size (longest side, mm)</label>
+        <input type="number" id="outputSize" value="100" min="1" max="1000"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text);font-family:var(--mono);padding:10px;font-size:13px;outline:none;">
+      </div>
+
+      <!-- Extra Notes -->
+      <div class="form-group full">
+        <label>Extra Notes (optional)</label>
+        <textarea id="extraNotes" rows="2"
+          placeholder="e.g. material is 3mm thick, want fine detail, previously had burn issues..."
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text);font-family:var(--sans);padding:10px;font-size:13px;outline:none;resize:vertical;"></textarea>
+      </div>
+
+    </div>
+
+    <button class="btn-analyze" id="btnAnalyze" onclick="runAnalysis()" disabled style="opacity:0.35;"
+      title="Upload an image and enter an API key to enable">
+      ⚡ Analyze &amp; Generate Settings
+    </button>
+  </div>
+
+  <!-- Thinking indicator -->
+  <div id="thinkingBlock">
+    <div class="laser-beam"></div>
+    <p>◈ ANALYZING IMAGE + COMPUTING SETTINGS…</p>
+  </div>
+
+  <!-- Error -->
+  <div id="errorBlock"></div>
+
+  <!-- Results -->
+  <div id="resultsBlock">
+    <div class="panel">
+      <div class="results-header">
+        <div class="results-title">⚙ Recommended Settings</div>
+        <div class="badge badge-ok" id="confidenceBadge">HIGH CONFIDENCE</div>
+      </div>
+      <div class="settings-grid" id="settingsGrid"></div>
+      <div class="lasergrbl-tip" id="lasergrblTip">
+        <strong>⟶ Where to set these in LaserGRBL</strong>
+        <span id="lasergrblTipText"></span>
+      </div>
+      <!-- FIX #2: imageAnalysisContent and detailedContent elements added -->
+      <div id="imageAnalysisContent" style="margin-top:16px;"></div>
+      <div id="detailedContent" style="margin-top:16px;"></div>
+
+      <div class="panel" id="exportPanel" style="margin-top:16px;">
+        <div class="panel-title">Export Settings</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-analyze" style="width:auto;padding:12px 20px;font-size:12px;" onclick="exportGCode()">⬇ G-CODE HEADER (.nc)</button>
+          <button class="btn-analyze" style="width:auto;padding:12px 20px;font-size:12px;" onclick="exportCustomButton()">⬇ CUSTOM BUTTON (.lbtn)</button>
+          <button class="btn-analyze" style="width:auto;padding:12px 20px;font-size:12px;" onclick="exportTextSummary()">⬇ SETTINGS SHEET (.txt)</button>
+        </div>
+        <div class="export-success" id="exportSuccess">✓ FILE DOWNLOADED</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>LASERGRBL ADVISOR // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+
+<!-- Feedback widget styles -->
+<style>
+  .fb-trigger {
+    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff; border: none;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 2px; padding: 12px 18px; cursor: pointer;
+    clip-path: polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px);
+    box-shadow: 0 4px 20px rgba(255,107,26,0.4); transition: all 0.2s; text-transform: uppercase;
+  }
+  .fb-trigger:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(255,107,26,0.55); }
+
+  .fb-panel {
+    position: fixed; bottom: 80px; right: 24px; z-index: 9998; width: 340px;
+    background: var(--bg); border: 1px solid var(--accent);
+    clip-path: polygon(12px 0%,100% 0%,100% calc(100% - 12px),calc(100% - 12px) 100%,0% 100%,0% 12px);
+    padding: 20px; box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    transform: translateY(20px); opacity: 0; pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+  .fb-panel.open { transform: translateY(0); opacity: 1; pointer-events: all; }
+  .fb-panel::before {
+    content: ''; position: absolute; top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--cyan));
+  }
+  .fb-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 3px;
+    color: var(--accent2); text-transform: uppercase; margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .fb-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 0; }
+  .fb-close:hover { color: var(--text); }
+  .fb-stars { display: flex; gap: 6px; margin-bottom: 6px; justify-content: center; }
+  .fb-star {
+    font-size: 28px; cursor: pointer; color: var(--border);
+    transition: color 0.1s, transform 0.1s; line-height: 1; background: none; border: none; padding: 0;
+  }
+  .fb-star:hover, .fb-star.lit { color: #ffcc00; }
+  .fb-star:hover { transform: scale(1.2); }
+  .fb-rating-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
+    color: var(--muted); text-align: center; margin-bottom: 14px; min-height: 16px;
+  }
+  .fb-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+    color: var(--muted); display: block; margin-bottom: 5px; text-transform: uppercase;
+  }
+  .fb-panel select, .fb-panel input[type=email], .fb-panel textarea {
+    width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border); color: var(--text); font-family: var(--sans);
+    font-size: 12px; padding: 8px 10px; margin-bottom: 12px; outline: none;
+    transition: border-color 0.2s; resize: vertical;
+    clip-path: polygon(5px 0%,100% 0%,100% calc(100% - 5px),calc(100% - 5px) 100%,0% 100%,0% 5px);
+  }
+  .fb-panel select:focus, .fb-panel input[type=email]:focus, .fb-panel textarea:focus { border-color: var(--accent); }
+  .fb-panel textarea { min-height: 80px; }
+  .btn-fb-submit {
+    width: 100%; background: linear-gradient(135deg, var(--accent), #ff8c00);
+    color: #fff; border: none; font-family: var(--mono); font-size: 11px;
+    font-weight: 700; letter-spacing: 2px; padding: 11px; cursor: pointer;
+    clip-path: polygon(6px 0%,100% 0%,100% calc(100% - 6px),calc(100% - 6px) 100%,0% 100%,0% 6px);
+    transition: all 0.2s; text-transform: uppercase;
+  }
+  .btn-fb-submit:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-fb-submit:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .fb-success { display: none; text-align: center; padding: 20px 0; }
+  .fb-success .fb-success-icon { font-size: 36px; margin-bottom: 10px; }
+  .fb-success p { font-family: var(--mono); font-size: 11px; letter-spacing: 2px; color: var(--green); line-height: 1.8; }
+  @media (max-width: 400px) { .fb-panel { width: calc(100vw - 32px); right: 16px; } }
+</style>
+
+<button class="fb-trigger" onclick="toggleFeedback()" id="fbTrigger">◈ FEEDBACK</button>
+
+<div class="fb-panel" id="fbPanel">
+  <div class="fb-title">
+    Send Feedback
+    <button class="fb-close" onclick="toggleFeedback()">✕</button>
+  </div>
+  <div id="fbForm">
+    <form name="lasergrbl-feedback" method="POST" data-netlify="true"
+          netlify-honeypot="bot-field" onsubmit="submitFeedback(event)">
+      <input type="hidden" name="form-name" value="lasergrbl-feedback">
+      <p style="display:none;"><input name="bot-field"></p>
+      <input type="hidden" name="rating" id="fbRatingInput" value="">
+      <div class="fb-stars">
+        <button type="button" class="fb-star" data-val="1" onclick="setRating(1)">★</button>
+        <button type="button" class="fb-star" data-val="2" onclick="setRating(2)">★</button>
+        <button type="button" class="fb-star" data-val="3" onclick="setRating(3)">★</button>
+        <button type="button" class="fb-star" data-val="4" onclick="setRating(4)">★</button>
+        <button type="button" class="fb-star" data-val="5" onclick="setRating(5)">★</button>
+      </div>
+      <div class="fb-rating-label" id="fbRatingLabel">TAP TO RATE</div>
+      <label class="fb-label">Your Laser Type</label>
+      <select name="laser_type">
+        <option value="">-- Select --</option>
+        <optgroup label="Diode">
+          <option>Diode 5W</option><option>Diode 10W</option>
+          <option>Diode 20W</option><option>Diode 40W</option>
+        </optgroup>
+        <optgroup label="CO2">
+          <option>CO2 30W (K40)</option><option>CO2 40W</option>
+          <option>CO2 60W</option><option>CO2 80W+</option>
+        </optgroup>
+        <optgroup label="Other">
+          <option>Fiber Laser</option>
+          <option>Don't have one yet</option>
+          <option>Other</option>
+        </optgroup>
+      </select>
+      <label class="fb-label">Suggestions / Comments</label>
+      <textarea name="suggestions" placeholder="What worked well? What could be better? Any features you'd like to see?"></textarea>
+      <label class="fb-label">Email (optional — if you want a reply)</label>
+      <input type="email" name="email" placeholder="you@example.com">
+      <button type="submit" class="btn-fb-submit" id="fbSubmitBtn">➡ SEND FEEDBACK</button>
+    </form>
+  </div>
+  <div class="fb-success" id="fbSuccess">
+    <div class="fb-success-icon">✓</div>
+    <p>FEEDBACK RECEIVED<br>THANKS FOR HELPING<br>MAKE THIS BETTER</p>
+  </div>
+</div>
+
+<script>
+// ── Feedback ──────────────────────────────────────────────────────────────────
+let _fbOpen = false, _fbRating = 0;
+const RATING_LABELS = ['','TERRIBLE','NEEDS WORK','DECENT','PRETTY GOOD','LOVE IT'];
+
+function toggleFeedback() {
+  _fbOpen = !_fbOpen;
+  document.getElementById('fbPanel').classList.toggle('open', _fbOpen);
+  document.getElementById('fbTrigger').textContent = _fbOpen ? '✕ CLOSE' : '◈ FEEDBACK';
+}
+
+function setRating(val) {
+  _fbRating = val;
+  document.getElementById('fbRatingInput').value = val + ' / 5';
+  const lbl = document.getElementById('fbRatingLabel');
+  lbl.textContent = RATING_LABELS[val];
+  lbl.style.color = val >= 4 ? 'var(--green)' : val >= 3 ? '#ffaa00' : 'var(--red)';
+  document.querySelectorAll('.fb-star').forEach(s => {
+    s.classList.toggle('lit', parseInt(s.dataset.val) <= val);
+  });
+}
+
+async function submitFeedback(e) {
+  e.preventDefault();
+  const btn = document.getElementById('fbSubmitBtn');
+  btn.disabled = true; btn.textContent = '⟳ SENDING...';
+  const data = new FormData(e.target);
+  try {
+    const res = await fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    });
+    if (res.ok) {
+      document.getElementById('fbForm').style.display = 'none';
+      document.getElementById('fbSuccess').style.display = 'block';
+      setTimeout(() => {
+        toggleFeedback();
+        setTimeout(() => {
+          document.getElementById('fbForm').style.display = 'block';
+          document.getElementById('fbSuccess').style.display = 'none';
+          e.target.reset(); setRating(0);
+          document.getElementById('fbRatingLabel').textContent = 'TAP TO RATE';
+          document.getElementById('fbRatingLabel').style.color = '';
+          btn.disabled = false; btn.textContent = '➡ SEND FEEDBACK';
+        }, 600);
+      }, 4000);
+    } else { throw new Error('Status ' + res.status); }
+  } catch(err) {
+    btn.disabled = false; btn.textContent = '➡ SEND FEEDBACK';
+    alert('Could not send: ' + err.message + '\n\nMake sure the site is deployed on Netlify.');
+  }
+}
+
+// ── Provider management ───────────────────────────────────────────────────────
+const PROVIDERS = ['anthropic', 'openai', 'google'];
+let _activeProvider = 'google';
+
+function getActiveKey() {
+  const el = document.getElementById('key-' + _activeProvider);
+  return el ? el.value.trim() : '';
+}
+
+function checkAPIGate() {
+  const hasKey   = !!getActiveKey();
+  const hasImage = !!uploadedBase64;
+  const btn = document.getElementById('btnAnalyze');
+  if (btn) {
+    btn.disabled = !(hasKey && hasImage);
+    btn.style.opacity = (hasKey && hasImage) ? '1' : '0.35';
+  }
+  const msg = document.getElementById('procGateMsg');
+  if (msg) msg.style.display = (!hasKey && hasImage) ? 'block' : 'none';
+  if (hasKey && hasImage) {
+    const wrap = document.getElementById('confidenceWrap');
+    if (wrap && wrap.style.display === 'none') analyzeImageQuality();
+  }
+}
+
+function switchProvider(name) {
+  _activeProvider = name;
+  PROVIDERS.forEach(p => {
+    document.getElementById('panel-' + p).style.display = p === name ? 'block' : 'none';
+    document.getElementById('tab-'   + p).classList.toggle('active', p === name);
+  });
+  localStorage.setItem('lasergrbl_last_provider', name);
+  checkAPIGate();
+}
+
+function toggleVis(provider) {
+  const input = document.getElementById('key-' + provider);
+  const btn   = document.getElementById('show-' + provider);
+  if (input.type === 'password') { input.type = 'text';     btn.textContent = 'HIDE'; }
+  else                           { input.type = 'password'; btn.textContent = 'SHOW'; }
+}
+
+function handleSave(provider) {
+  const checked = document.getElementById('save-' + provider).checked;
+  const key     = document.getElementById('key-'  + provider).value.trim();
+  const badge   = document.getElementById('saved-' + provider);
+  const clear   = document.getElementById('clear-' + provider);
+  if (checked && key) {
+    localStorage.setItem('lasergrbl_key_' + provider, key);
+    badge.style.display = 'inline'; clear.style.display = 'inline';
+  } else if (!checked) {
+    localStorage.removeItem('lasergrbl_key_' + provider);
+    badge.style.display = 'none'; clear.style.display = 'none';
+  }
+}
+
+function autoSaveKey(provider) {
+  if (document.getElementById('save-' + provider).checked) {
+    const key = document.getElementById('key-' + provider).value.trim();
+    if (key) localStorage.setItem('lasergrbl_key_' + provider, key);
+  }
+  checkAPIGate();
+}
+
+function clearKey(provider) {
+  localStorage.removeItem('lasergrbl_key_' + provider);
+  document.getElementById('key-'   + provider).value = '';
+  document.getElementById('save-'  + provider).checked = false;
+  document.getElementById('saved-' + provider).style.display = 'none';
+  document.getElementById('clear-' + provider).style.display = 'none';
+}
+
+function loadSavedKeys() {
+  PROVIDERS.forEach(provider => {
+    const saved = localStorage.getItem('lasergrbl_key_' + provider);
+    if (saved) {
+      document.getElementById('key-'   + provider).value = saved;
+      document.getElementById('save-'  + provider).checked = true;
+      document.getElementById('saved-' + provider).style.display = 'inline';
+      document.getElementById('clear-' + provider).style.display = 'inline';
+    }
+  });
+  const lastProvider = localStorage.getItem('lasergrbl_last_provider');
+  if (lastProvider && PROVIDERS.includes(lastProvider)) switchProvider(lastProvider);
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadSavedKeys(); checkAPIGate(); });
+
+// ── File handling ─────────────────────────────────────────────────────────────
+let uploadedFile   = null;
+let uploadedBase64 = null;
+
+const fileInput  = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  uploadedFile = file;
+  document.getElementById('filename').textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedBase64 = ev.target.result.split(',')[1];
+
+    // FIX #3: Show preview image properly
+    const img = document.getElementById('imagePreview');
+    img.src = ev.target.result;
+    img.onload = () => {
+      document.getElementById('imgDims').textContent = `${img.naturalWidth} × ${img.naturalHeight} px`;
+      document.getElementById('imgSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+      document.getElementById('imgMode').textContent = file.type.split('/')[1].toUpperCase();
+    };
+
+    // Show the preview wrapper (img is visible by default now)
+    document.getElementById('imagePreviewWrap').style.display = 'block';
+
+    // Show image analysis panel
+    document.getElementById('procPanel').style.display = 'block';
+
+    checkAPIGate();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Provider API calls ────────────────────────────────────────────────────────
+// FIX #1: callActiveProvider defined BEFORE analyzeImageQuality which calls it
+
+async function callActiveProvider(key, prompt) {
+  if (_activeProvider === 'anthropic') return await callAnthropic(key, prompt);
+  if (_activeProvider === 'openai')    return await callOpenAI(key, prompt);
+  return await callGoogle(key, prompt);
+}
+
+async function callAnthropic(apiKey, prompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: uploadedFile.type, data: uploadedBase64 } },
+        { type: 'text', text: prompt }
+      ]}]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error('Anthropic: ' + data.error.message);
+  return data.content?.[0]?.text || '';
+}
+
+async function callOpenAI(apiKey, prompt) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: [
+        { type: 'image_url', image_url: { url: 'data:' + uploadedFile.type + ';base64,' + uploadedBase64 } },
+        { type: 'text', text: prompt }
+      ]}]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error('OpenAI: ' + data.error.message);
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callGoogle(apiKey, prompt) {
+  const res = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inline_data: { mime_type: uploadedFile.type, data: uploadedBase64 } },
+          { text: prompt }
+        ]}],
+        generationConfig: { maxOutputTokens: 1000 }
+      })
+    }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error('Google: ' + data.error.message);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ── Image quality analysis ────────────────────────────────────────────────────
+async function analyzeImageQuality() {
+  const key = getActiveKey();
+  if (!key || !uploadedBase64) return;
+
+  const wrap = document.getElementById('confidenceWrap');
+  wrap.style.display = 'block';
+  document.getElementById('confScore').textContent = '...';
+  document.getElementById('confNote').textContent  = 'Analyzing image quality...';
+  document.getElementById('confFill').style.width  = '0%';
+  document.getElementById('confFactors').innerHTML = '';
+
+  const prompt = `Analyze this image for laser engraving suitability. Respond ONLY with a JSON object, no markdown:
+{
+  "score": 85,
+  "note": "one sentence summary of suitability",
+  "factors": [
+    {"label": "Resolution", "rating": "good|warn|bad", "detail": "short note"},
+    {"label": "Contrast",   "rating": "good|warn|bad", "detail": "short note"},
+    {"label": "Complexity", "rating": "good|warn|bad", "detail": "short note"},
+    {"label": "Fine Detail","rating": "good|warn|bad", "detail": "short note"},
+    {"label": "Background", "rating": "good|warn|bad", "detail": "short note"}
+  ]
+}
+Score 0-100: high contrast=good, clean background=good, fine lines+high res=good, photo complexity=harder, low res=bad.`;
+
+  try {
+    const text    = await callActiveProvider(key, prompt);
+    const json    = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    const score   = json.score || 0;
+    const factors = json.factors || [];
+    const color   = score >= 75 ? 'var(--green)' : score >= 50 ? '#ffaa00' : 'var(--red)';
+
+    document.getElementById('confScore').textContent = score + ' / 100';
+    document.getElementById('confScore').style.color = color;
+    document.getElementById('confNote').textContent  = json.note || '';
+
+    const fill = document.getElementById('confFill');
+    fill.style.background = color;
+    setTimeout(() => fill.style.width = score + '%', 100);
+
+    document.getElementById('confFactors').innerHTML = factors.map(f =>
+      `<div class="conf-factor ${f.rating}" title="${f.detail}">${f.label}: ${f.rating.toUpperCase()}</div>`
+    ).join('');
+
+  } catch (err) {
+    document.getElementById('confNote').textContent = 'Could not analyze: ' + err.message;
+  }
+}
+
+// ── Main analysis ─────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  const laserType  = document.getElementById('laserType').value;
+  const material   = document.getElementById('material').value;
+  const operation  = document.getElementById('operationType').value;
+  const outputSize = document.getElementById('outputSize').value;
+  const extraNotes = document.getElementById('extraNotes').value;
+  const apiKey     = getActiveKey();
+
+  if (!uploadedBase64) { alert('Please upload an image first.'); return; }
+  if (!laserType)       { alert('Please select a laser type.'); return; }
+  if (!material)        { alert('Please select a material.'); return; }
+  if (!apiKey)          { alert('Please enter your API key.'); return; }
+
+  localStorage.setItem('lasergrbl_last_provider', _activeProvider);
+
+  document.getElementById('btnAnalyze').disabled = true;
+  document.getElementById('thinkingBlock').style.display = 'block';
+  document.getElementById('resultsBlock').style.display  = 'none';
+  document.getElementById('errorBlock').style.display    = 'none';
+
+  const prompt = buildPrompt(laserType, material, operation, outputSize, extraNotes);
+
+  try {
+    const text  = await callActiveProvider(apiKey, prompt);
+    const clean = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3)).replace(/```/g, '').trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Could not parse AI response. Raw: ' + text.slice(0, 300));
+    const result = JSON.parse(jsonMatch[0]);
+    renderResults(result);
+  } catch (err) {
+    document.getElementById('errorBlock').style.display = 'block';
+    document.getElementById('errorBlock').textContent   = '⚠ Error: ' + err.message;
+  } finally {
+    document.getElementById('btnAnalyze').disabled = false;
+    document.getElementById('thinkingBlock').style.display = 'none';
+  }
+}
+
+// ── Prompt builder ────────────────────────────────────────────────────────────
+function buildPrompt(laserType, material, operation, outputSize, extraNotes) {
+  const laserNames = {
+    diode_5w:  'Diode laser ~5W optical (e.g. Sculpfun S9, NEJE A40630)',
+    diode_10w: 'Diode laser ~10W optical (e.g. Sculpfun S10, xTool D1 Pro 10W)',
+    diode_20w: 'Diode laser ~20W optical (e.g. Sculpfun S30 Pro, NEJE 4 Max)',
+    diode_40w: 'Diode laser ~40W optical (high-end diode, e.g. Sculpfun S30 Ultra)',
+    co2_30w:   'CO2 laser 30W (K40-style)',
+    co2_40w:   'CO2 laser 40W (K40, OMTech 40W)',
+    co2_60w:   'CO2 laser 60W',
+    co2_80w:   'CO2 laser 80W',
+    fiber_20w: 'Fiber laser 20W (MOPA/pulse)',
+    fiber_50w: 'Fiber laser 50W',
+  };
+  const materialNames = {
+    wood_balsa:      'Balsa / thin craft wood',
+    wood_plywood:    'Plywood (birch, poplar)',
+    wood_hardwood:   'Hardwood (oak, maple, walnut)',
+    wood_mdf:        'MDF / HDF',
+    acrylic_cast:    'Cast acrylic',
+    acrylic_extruded:'Extruded acrylic',
+    leather:         'Leather / Faux leather',
+    anodized_alum:   'Anodized aluminum',
+    bare_metal_coat: 'Bare metal with Cermark/Moly lube',
+    stainless:       'Stainless steel',
+    slate:           'Slate / Stone',
+    glass:           'Glass',
+    cardboard:       'Cardboard / Chipboard',
+    fabric:          'Fabric / Denim',
+  };
+  const opNames = {
+    engrave_photo:  'photo engraving (greyscale/dithered image)',
+    engrave_vector: 'vector / line engraving',
+    engrave_fill:   'raster fill engraving',
+    cut:            'through-cutting',
+    mark_metal:     'metal surface marking',
+  };
+
+  return `You are a laser engraving expert with deep knowledge of LaserGRBL software settings.
+
+I have uploaded an image I want to engrave/cut. Analyze it and provide LaserGRBL settings.
+
+SETUP:
+- Laser: ${laserNames[laserType] || laserType}
+- Material: ${materialNames[material] || material}
+- Operation: ${opNames[operation] || operation}
+- Desired output size (longest side): ${outputSize || '100'} mm
+- Extra notes: ${extraNotes || 'none'}
+
+Analyze the image carefully for: complexity, contrast, fine details, fill areas, and operation suitability.
+
+Respond ONLY with a single JSON object (no markdown, no preamble):
+
+{
+  "confidence": "high" | "medium" | "low",
+  "settings": {
+    "speed_mm_min": <number>,
+    "speed_range": "<min>–<max> mm/min",
+    "power_percent": <number>,
+    "power_range": "<min>%–<max>%",
+    "passes": <number>,
+    "line_interval_mm": <number>,
+    "dpi": <number>,
+    "s_max": <number>,
+    "overscan": <number>
+  },
+  "image_analysis": {
+    "complexity": "simple" | "moderate" | "complex" | "photo",
+    "contrast": "high" | "medium" | "low",
+    "fine_details": true | false,
+    "large_fill_areas": true | false,
+    "recommended_mode": "<LaserGRBL import mode>",
+    "tags": ["<tag1>", "<tag2>"]
+  },
+  "analysis": "<2-3 sentence summary>",
+  "tips": ["<tip 1>", "<tip 2>", "<tip 3>"],
+  "warnings": ["<warning or empty array>"],
+  "lasergrbl_path": "<where to enter these values in LaserGRBL>"
+}`;
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+let _lastResult = null;
+
+function renderResults(r) {
+  _lastResult = r;
+  const s = r.settings;
+
+  const badge = document.getElementById('confidenceBadge');
+  badge.textContent = (r.confidence || 'unknown').toUpperCase() + ' CONFIDENCE';
+  badge.className = 'badge ' + (r.confidence === 'high' ? 'badge-ok' : r.confidence === 'medium' ? 'badge-warn' : 'badge-danger');
+
+  const cards = [
+    { label: 'Speed',         value: s.speed_mm_min,    unit: 'mm/min', range: s.speed_range },
+    { label: 'Power',         value: s.power_percent,   unit: '%',      range: s.power_range },
+    { label: 'Passes',        value: s.passes,          unit: 'passes', range: 'total runs' },
+    { label: 'Line Interval', value: s.line_interval_mm,unit: 'mm',     range: `${s.dpi} DPI` },
+    { label: 'S-Max Value',   value: s.s_max,           unit: '',       range: 'GRBL $30 setting' },
+    { label: 'Overscan',      value: s.overscan,        unit: '%',      range: 'raster edge comp' },
+  ];
+
+  document.getElementById('settingsGrid').innerHTML = cards.map(c => `
+    <div class="setting-card">
+      <div class="setting-label">${c.label}</div>
+      <div class="setting-value">${c.value ?? '—'}<span class="setting-unit">${c.unit}</span></div>
+      <div class="setting-range"><em>${c.range || ''}</em></div>
+    </div>
+  `).join('');
+
+  document.getElementById('lasergrblTipText').textContent = r.lasergrbl_path || '';
+
+  // FIX #2: Now renders into elements that actually exist in the DOM
+  const ia = r.image_analysis || {};
+  document.getElementById('imageAnalysisContent').innerHTML = `
+    <div class="analysis-section">
+      <h3>Image Analysis</h3>
+      <div class="image-chips">
+        <div class="chip ${ia.complexity ? 'active' : ''}">Complexity: ${ia.complexity || '—'}</div>
+        <div class="chip ${ia.contrast   ? 'active' : ''}">Contrast: ${ia.contrast || '—'}</div>
+        <div class="chip ${ia.fine_details ? 'active' : ''}">Fine details: ${ia.fine_details ? 'Yes' : 'No'}</div>
+        <div class="chip ${ia.large_fill_areas ? 'active' : ''}">Large fills: ${ia.large_fill_areas ? 'Yes' : 'No'}</div>
+      </div>
+      <div class="highlight-box">⟶ Recommended LaserGRBL import mode: <strong>${ia.recommended_mode || '—'}</strong></div>
+      ${(ia.tags || []).map(t => `<span class="chip active">${t}</span>`).join(' ')}
+      <p style="margin-top:14px;">${r.analysis || ''}</p>
+    </div>
+  `;
+
+  let detailed = '';
+  if (r.tips?.length) {
+    detailed += `<div class="analysis-section">
+      <h3>Setup Tips</h3>
+      <ul>${r.tips.map(t => `<li>${t}</li>`).join('')}</ul>
+    </div>`;
+  }
+  if (r.warnings?.length) {
+    detailed += `<div class="analysis-section">
+      <h3>Warnings</h3>
+      ${r.warnings.map(w => `<div class="warning-box">⚠ ${w}</div>`).join('')}
+    </div>`;
+  }
+  document.getElementById('detailedContent').innerHTML = detailed;
+
+  document.getElementById('resultsBlock').style.display = 'block';
+  document.getElementById('resultsBlock').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Export functions ──────────────────────────────────────────────────────────
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  const msg = document.getElementById('exportSuccess');
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+function getJobLabel() {
+  const mat   = document.getElementById('material').value.replace(/_/g,' ');
+  const laser = document.getElementById('laserType').value.replace(/_/g,' ');
+  const op    = document.getElementById('operationType').value.replace(/_/g,' ');
+  return `${laser} / ${mat} / ${op}`;
+}
+
+function exportGCode() {
+  if (!_lastResult) return;
+  const s      = _lastResult.settings;
+  const now    = new Date().toISOString().slice(0,16).replace('T',' ');
+  const sMax   = s.s_max || 255;
+  const sValue = Math.round((s.power_percent / 100) * sMax);
+  const speed  = s.speed_mm_min || 1000;
+
+  const gcode = [
+    '; ╔══════════════════════════════════════════╗',
+    '; ║   LaserGRBL Advisor — Generated Settings  ║',
+    '; ╚══════════════════════════════════════════╝',
+    `; Job:       ${getJobLabel()}`,
+    `; Generated: ${now}`,
+    `; Confidence: ${_lastResult.confidence?.toUpperCase()}`,
+    ';',
+    `; Speed:         ${speed} mm/min`,
+    `; Power:         ${s.power_percent}% (S${sValue} of S${sMax})`,
+    `; Passes:        ${s.passes}`,
+    `; Line interval: ${s.line_interval_mm} mm  (${s.dpi} DPI)`,
+    `; Overscan:      ${s.overscan}%`,
+    '',
+    `$30=${sMax}`,
+    'G21', 'G90', `G1 F${speed}`,
+    '',
+    `; M3 S${sValue}`,
+    `; G1 X10 F${speed}`,
+    '; M5',
+    '; G0 X0',
+  ].join('\n');
+
+  downloadFile(`lasergrbl-settings-${Date.now()}.nc`, gcode, 'text/plain');
+}
+
+function exportCustomButton() {
+  if (!_lastResult) return;
+  const s      = _lastResult.settings;
+  const sMax   = s.s_max || 255;
+  const sValue = Math.round((s.power_percent / 100) * sMax);
+  const speed  = s.speed_mm_min || 1000;
+  const label  = getJobLabel().slice(0, 30);
+
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<CustomButton>
+  <ButtonText>${escXml(label)}</ButtonText>
+  <ButtonColor>255, 107, 26</ButtonColor>
+  <GrblCode>$30=${sMax}\nG21\nG90\nG1 F${speed}\n</GrblCode>
+  <ToolTip>Speed: ${speed} mm/min | Power: ${s.power_percent}% (S${sValue}/${sMax})</ToolTip>
+  <Confirm>false</Confirm>
+</CustomButton>`;
+
+  downloadFile(`lasergrbl-button-${Date.now()}.lbtn`, xml, 'application/xml');
+}
+
+function escXml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function exportTextSummary() {
+  if (!_lastResult) return;
+  const s   = _lastResult.settings;
+  const ia  = _lastResult.image_analysis || {};
+  const now = new Date().toLocaleString();
+  const line = '─'.repeat(50);
+
+  const txt = [
+    '╔══════════════════════════════════════════════════╗',
+    '║          LaserGRBL Advisor — Settings Sheet       ║',
+    '╚══════════════════════════════════════════════════╝',
+    '', `Generated : ${now}`, `Job       : ${getJobLabel()}`,
+    `Image     : ${document.getElementById('filename').textContent || 'unknown'}`,
+    `Confidence: ${_lastResult.confidence?.toUpperCase()}`, '',
+    line, '  LASERGRBL SETTINGS', line,
+    `  Speed          : ${s.speed_mm_min} mm/min   (range: ${s.speed_range})`,
+    `  Power          : ${s.power_percent}%         (range: ${s.power_range})`,
+    `  Passes         : ${s.passes}`,
+    `  Line Interval  : ${s.line_interval_mm} mm`,
+    `  DPI            : ${s.dpi}`,
+    `  S-Max ($30)    : ${s.s_max}`,
+    `  Overscan       : ${s.overscan}%`, '',
+    line, '  IMAGE ANALYSIS', line,
+    `  Import Mode    : ${ia.recommended_mode || '—'}`,
+    `  Complexity     : ${ia.complexity || '—'}`,
+    `  Contrast       : ${ia.contrast || '—'}`,
+    `  Fine Details   : ${ia.fine_details ? 'Yes' : 'No'}`,
+    `  Large Fill Areas: ${ia.large_fill_areas ? 'Yes' : 'No'}`, '',
+    line, '  ANALYSIS', line,
+    `  ${_lastResult.analysis || ''}`, '',
+    line, '  TIPS', line,
+    ...(_lastResult.tips || []).map((t,i) => `  ${i+1}. ${t}`), '',
+    ...(_lastResult.warnings?.length ? [
+      line, '  ⚠ WARNINGS', line,
+      ...(_lastResult.warnings.map(w => `  ! ${w}`)), '',
+    ] : []),
+    line, '  WHERE TO ENTER IN LASERGRBL', line,
+    `  ${_lastResult.lasergrbl_path || ''}`, '',
+    line, '  ALWAYS DO A TEST BURN ON SCRAP MATERIAL FIRST', line,
+  ].join('\n');
+
+  downloadFile(`lasergrbl-settings-${Date.now()}.txt`, txt, 'text/plain');
+}
+
+// ── USB / Web Serial laser detection ─────────────────────────────────────────
+// FIX #4: Added 5-second timeout so it doesn't hang forever
+let _serialPort = null;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function detectLaser() {
+  const btn    = document.getElementById('btnDetect');
+  const status = document.getElementById('detectStatus');
+
+  if (!('serial' in navigator)) {
+    showDetectStatus('⚠ Web Serial not supported. Use Chrome or Edge.', 'var(--red)');
+    return;
+  }
+
+  btn.textContent = '⟳ CONNECTING…';
+  btn.disabled    = true;
+  showDetectStatus('Requesting serial port access…', 'var(--muted)');
+
+  // FIX #4: Wrap the whole thing in a timeout race
+  const timeoutPromise = sleep(5000).then(() => { throw new Error('timeout'); });
+
+  try {
+    await Promise.race([doDetect(), timeoutPromise]);
+  } catch (err) {
+    if (err.message === 'timeout') {
+      showDetectStatus('No port selected or timed out.', 'var(--muted)');
+    } else if (err.name === 'NotFoundError') {
+      showDetectStatus('No port selected.', 'var(--muted)');
+    } else {
+      showDetectStatus('⚠ ' + err.message, 'var(--red)');
+    }
+  } finally {
+    btn.textContent = '⚡ AUTO-DETECT';
+    btn.disabled    = false;
+  }
+}
+
+async function doDetect() {
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+  _serialPort = port;
+
+  showDetectStatus('Connected. Querying GRBL firmware…', 'var(--cyan)');
+
+  const writer  = port.writable.getWriter();
+  const reader  = port.readable.getReader();
+  const encoder = new TextEncoder();
+
+  await writer.write(encoder.encode('\x18'));
+  await sleep(1500);
+  await writer.write(encoder.encode('$$\n'));
+
+  const lines    = [];
+  const deadline = Date.now() + 3000;
+  let   buffer   = '';
+
+  while (Date.now() < deadline) {
+    const { value, done } = await Promise.race([
+      reader.read(),
+      sleep(300).then(() => ({ value: null, done: false }))
+    ]);
+    if (done) break;
+    if (!value) continue;
+    buffer += new TextDecoder().decode(value);
+    const parts = buffer.split('\n');
+    buffer = parts.pop();
+    for (const line of parts) { const t = line.trim(); if (t) lines.push(t); }
+    if (lines.filter(l => l.startsWith('$')).length > 15) break;
+  }
+
+  writer.releaseLock();
+  reader.cancel();
+  await port.close();
+  _serialPort = null;
+
+  parseGrblSettings(lines);
+}
+
+function parseGrblSettings(lines) {
+  const settings = {};
+  for (const line of lines) {
+    const m = line.match(/^\$(\d+)=([\d.]+)/);
+    if (m) settings[parseInt(m[1])] = parseFloat(m[2]);
+  }
+
+  if (Object.keys(settings).length === 0) {
+    showDetectStatus('⚠ No GRBL settings received. Is the laser on and connected?', 'var(--red)');
+    return;
+  }
+
+  const xRate = settings[110] || 0;
+  const yRate = settings[111] || 0;
+  const avgRate = (xRate + yRate) / 2;
+
+  let guessedType = '';
+  let confidence  = '';
+
+  if      (avgRate > 15000) { guessedType = 'diode_20w'; confidence = 'likely a fast diode (20W+ class)'; }
+  else if (avgRate > 8000)  { guessedType = 'diode_10w'; confidence = 'likely a mid-range diode (5-10W class)'; }
+  else if (avgRate > 2000)  { guessedType = 'co2_40w';   confidence = 'likely a CO2 laser (K40/40W class)'; }
+  else                      { guessedType = 'co2_30w';   confidence = 'slower machine — possibly K40 or older CO2'; }
+
+  const notes = [
+    `$30 (S-max): ${settings[30] || '?'}`,
+    `$110 X max rate: ${xRate} mm/min`,
+    `$111 Y max rate: ${yRate} mm/min`,
+    settings[32] !== undefined ? `$32 laser mode: ${settings[32] === 1 ? 'ON ✓' : 'OFF ✗'}` : null,
+    settings[130] !== undefined ? `$130 X travel: ${settings[130]} mm` : null,
+    settings[131] !== undefined ? `$131 Y travel: ${settings[131]} mm` : null,
+  ].filter(Boolean);
+
+  if (guessedType) document.getElementById('laserType').value = guessedType;
+
+  // FIX #5: grblParamsList now exists in the DOM
+  document.getElementById('grblParams').style.display = 'block';
+  document.getElementById('grblParamsList').innerHTML = notes.map(n => `<div>◈ ${n}</div>`).join('');
+
+  showDetectStatus(`✓ Connected — ${confidence}. Verify the laser type above.`, 'var(--green)');
+  window._detectedSMax = settings[30] || 255;
+}
+
+function showDetectStatus(msg, color) {
+  const el = document.getElementById('detectStatus');
+  el.style.display = 'block';
+  el.style.color   = color;
+  el.textContent   = msg;
+}
+</script>
+</body>
+</html>
