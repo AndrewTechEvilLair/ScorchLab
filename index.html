@@ -4,7 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.3 — Fix quality JSON parse error; remove anchored 85 score; ban decimals; nuclear brace extraction for quality parser
+<!-- v2.9 — Correct dither algorithm names from actual LaserGRBL dropdown: Burks/Jarvis/Sierra2/Sierra3/SierraLight/Random
+     v2.8 — Dithering algorithm selection: 8 algorithms with laser-specific guidance added to schema, render, exports
+     v2.7 — Correct slider ranges from software: brightness/contrast 40-160 (defaults 114/113), white clip 0-100 (default 0)
+     v2.6 — White clip default corrected to 0; Centerline added to BW threshold tools; persona rules updated with defaults
+     v2.5 — BW Threshold logic corrected: shows for Line To Line and Vectorize!, hidden for 1bit Dithering and Pass Through
+     v2.4 — Add white_clip field; fix BW threshold (null when not dithering); aggressive contrast/brightness for low-contrast photos
+     v2.3 — Fix quality JSON parse error; remove anchored 85 score; ban decimals; nuclear brace extraction for quality parser
      v2.2 — Separate honest scoring persona for quality check; quality analysis always re-runs on new image
      v2.1 — System persona added to all three providers; JSON rules moved to system prompt for better compliance
      v2.0 — Results now match LaserGRBL screens exactly (Screen 1: Import Raster Image / Screen 2: Target Image); field names, order and categories match the UI
@@ -1047,7 +1053,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v2.3 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.9 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1506,11 +1512,25 @@ Your response rules — follow these exactly, no exceptions:
 2. All string values must be under 80 characters.
 3. Use only the exact field names specified in the user prompt.
 4. For "conversion_tool" use exactly one of: "Line To Line", "1bit BW Dithering", "Vectorize!"
+5b. When "conversion_tool" is "1bit BW Dithering", also set "dither_algorithm" to exactly one of:
+    "Atkinson" | "FloydSteinberg" | "Burks" | "Jarvis" | "Random" | "Sierra2" | "Sierra3" | "SierraLight" | "Stucki"
+    Use null for all other conversion tools.
+    Algorithm guide (use exact strings above):
+    - FloydSteinberg: Fast, reliable, slight worm artifacts on flat areas. Good general purpose default.
+    - Jarvis: Smoother than Floyd, distributes error wider over 3 rows. Best for detailed portraits on wood - gold standard for photos.
+    - Stucki: Similar to Jarvis, slightly sharper and a bit faster. Excellent for detailed photos and portraits.
+    - Burks: Faster version of Stucki (one row dropped). Good balance of speed and quality for most images.
+    - Sierra3: 3-row Sierra, smooth midtones, retains sharpness. Great for leather, stone, and slate.
+    - Sierra2: 2-row Sierra, faster than Sierra3, still smooth. Good all-rounder.
+    - SierraLight: Fastest error diffusion, minimal quality hit. Good for quick test burns and proofs.
+    - Atkinson: Only propagates 75pct of error - punchy midtones but blows out highlights/shadows.
+      Best for stylized engravings, high-contrast logos, artistic/retro look. Classic Mac algorithm.
+    - Random: Random threshold dithering. Creates noisy/grainy texture. Use for artistic effect only.
 5. For "laser_mode" use exactly one of: "M3 Constant", "M4 Dynamic"
 6. For "resize" use exactly one of: "High Quality Bicubic", "Nearest Neighbour"
 7. For "grayscale_conversion" use exactly one of: "SimpleAverage", "WeightAverage", "OpticalCorrect", "Custom"
-8. "brightness" and "contrast" are integers from -100 to 100 (0 = no change)
-9. "bw_threshold_value" is an integer 0-255
+8. "brightness" is an integer 40-160, default 114 (below 114 = darker, above 114 = brighter). "contrast" is an integer 40-160, default 113 (below 113 = less contrast, above 113 = more contrast). "white_clip" is 0-100, default 0 (0 = disabled, higher clips more light pixels to white).
+9. "bw_threshold_value" is an integer 0-255, default 128. Only set for "Line To Line", "Vectorize!", or "Centerline". Set to null for "1bit BW Dithering" and "Pass Through".
 10. Never truncate the JSON. Always complete the full object.`;
 
 // Separate lighter persona for suitability scoring — no field-name rules,
@@ -1766,8 +1786,15 @@ SETUP:
 
 Recommend exact LaserGRBL settings matching the two import dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2).
 
+Field guidance:
+- brightness: integer 40-160, default 114. Below 114 = darker, above 114 = brighter. For low-contrast photos push to 130-145. For overexposed images drop to 90-105.
+- contrast: integer 40-160, default 113. Below 113 = softer, above 113 = more contrast. For low-contrast photos push to 135-155. For already harsh images drop to 95-110.
+- white_clip: integer 0-100, default 0 (disabled). Higher values clip light pixels to white (shown pink in preview). Use 40-70 for washed-out or low-contrast photos. Leave at 0 for clean high-contrast images.
+- bw_threshold_value: integer 0-255, default 128. Set when conversion_tool is "Line To Line", "Vectorize!", or "Centerline" — these show a BW Threshold checkbox+slider in LaserGRBL. Set to null when conversion_tool is "1bit BW Dithering" or "Pass Through" — those handle thresholding internally.
+- lines_per_mm: typical range 5-20. Higher = finer but slower.
+
 Use this exact JSON structure, replace values only:
-{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":0,"contrast":0,"bw_threshold_enabled":false,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1,"width_mm":100,"height_mm":100},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
+{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1,"width_mm":100,"height_mm":100},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
@@ -1801,9 +1828,10 @@ function renderResults(r) {
       <div class="settings-grid" style="margin-bottom:16px;">
         ${settingRow('Resize', s1.resize, '')}
         ${settingRow('Grayscale Conversion', s1.grayscale_conversion, '')}
-        ${settingRow('Brightness', s1.brightness, '')}
-        ${settingRow('Contrast', s1.contrast, '')}
-        ${settingRow('BW Threshold', s1.bw_threshold_enabled ? 'ON — ' + s1.bw_threshold_value : 'OFF', '')}
+        ${settingRow('Brightness', s1.brightness ?? 114, '/ 160')}
+        ${settingRow('Contrast', s1.contrast ?? 113, '/ 160')}
+        ${settingRow('White Clip', s1.white_clip ?? 0, '/ 100')}
+        ${(s1.conversion_tool === '1bit BW Dithering' && s1.dither_algorithm ? settingRow('Dither Algorithm', s1.dither_algorithm, '') : '') + ((s1.conversion_tool === 'Line To Line' || s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') ? settingRow('BW Threshold', s1.bw_threshold_value ?? 128, '/ 255') : ''}
       </div>
 
       <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Conversion Tool</div>
@@ -1905,9 +1933,11 @@ function exportGCode() {
     '; ── SCREEN 1: Import Raster Image ──────────',
     `; Resize:              ${s1.resize}`,
     `; Grayscale:           ${s1.grayscale_conversion}`,
-    `; Brightness:          ${s1.brightness}`,
-    `; Contrast:            ${s1.contrast}`,
-    `; BW Threshold:        ${s1.bw_threshold_enabled ? 'ON (' + s1.bw_threshold_value + ')' : 'OFF'}`,
+    `; Brightness:          ${s1.brightness} / 160  (default: 114)`,
+    `; Contrast:            ${s1.contrast} / 160  (default: 113)`,
+    `; White Clip:          ${s1.white_clip ?? 0} / 100  (default: 0)`,
+    `; Dither Algorithm:    ${s1.conversion_tool === '1bit BW Dithering' ? (s1.dither_algorithm || 'FloydSteinberg') : 'N/A'}`,
+    `; BW Threshold:        ${s1.bw_threshold_value != null ? s1.bw_threshold_value : 'N/A'}`,
     `; Conversion Tool:     ${s1.conversion_tool}`,
     `; Lines/mm:            ${s1.lines_per_mm}`,
     ';',
@@ -1973,9 +2003,11 @@ function exportTextSummary() {
     '  [ Parameters ]',
     `  Resize                : ${s1.resize || '—'}`,
     `  Grayscale Conversion  : ${s1.grayscale_conversion || '—'}`,
-    `  Brightness            : ${s1.brightness ?? '—'}`,
-    `  Contrast              : ${s1.contrast ?? '—'}`,
-    `  BW Threshold          : ${s1.bw_threshold_enabled ? 'ON (' + s1.bw_threshold_value + ')' : 'OFF'}`,
+    `  Brightness            : ${s1.brightness ?? 114} / 160  (default 114)`,
+    `  Contrast              : ${s1.contrast ?? 113} / 160  (default 113)`,
+    `  White Clip            : ${s1.white_clip ?? 0} / 100  (default 0)`,
+    `  Dither Algorithm      : ${s1.conversion_tool === '1bit BW Dithering' ? (s1.dither_algorithm || 'FloydSteinberg') : 'N/A'}`,
+    `  BW Threshold          : ${s1.bw_threshold_value != null ? s1.bw_threshold_value : 'N/A'}`,
     '',
     '  [ Conversion Tool ]',
     `  Tool                  : ${s1.conversion_tool || '—'}`,
