@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v1.6 — Move status bar above analyze button; nuclear JSON extraction (immune to markdown fences)
+<!-- v1.8 — API key validation before any AI calls; checking/valid/invalid status badge; Google tab first; suitability score gated on valid key
+     v1.7 — Bump max_tokens to 2000; tighter prompt prevents truncation; explicit no-backtick instruction
+     v1.6 — Move status bar above analyze button; nuclear JSON extraction (immune to markdown fences)
      v1.5 — Fix JSON parsing (markdown fences), fix score 0/100 bug, always show reason on failure
      v1.4 — Added Buy Me a Coffee button to footer
      v1.3 — Bug fixes:
@@ -732,6 +734,35 @@
     font-style: italic;
   }
 
+  .key-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 5px 12px;
+    text-decoration: none;
+    clip-path: polygon(5px 0%,100% 0%,100% calc(100% - 5px),calc(100% - 5px) 100%,0% 100%,0% 5px);
+  }
+  .key-status.checking {
+    background: rgba(255,204,0,0.15);
+    border: 1px solid #ffcc00;
+    color: #ffcc00;
+    animation: blink 0.8s step-end infinite;
+  }
+  .key-status.valid {
+    background: var(--green);
+    border: 1px solid var(--green);
+    color: #000;
+  }
+  .key-status.invalid {
+    background: var(--red);
+    border: 1px solid var(--red);
+    color: #000;
+  }
+
   @media (max-width: 640px) {
     .form-grid { grid-template-columns: 1fr; }
     .settings-grid { grid-template-columns: 1fr 1fr; }
@@ -778,53 +809,15 @@
       <div class="form-group full">
         <label>AI Provider</label>
         <div style="display:flex; gap:0; border-bottom:1px solid var(--border);">
-          <button type="button" class="provider-tab" id="tab-anthropic" onclick="switchProvider('anthropic')">
-            <span class="ptab-dot" style="background:#cc785c;"></span> Anthropic
+          <button type="button" class="provider-tab active" id="tab-google" onclick="switchProvider('google')">
+            <span class="ptab-dot" style="background:#4285f4;"></span> Google
           </button>
           <button type="button" class="provider-tab" id="tab-openai" onclick="switchProvider('openai')">
             <span class="ptab-dot" style="background:#74aa9c;"></span> OpenAI
           </button>
-          <button type="button" class="provider-tab active" id="tab-google" onclick="switchProvider('google')">
-            <span class="ptab-dot" style="background:#4285f4;"></span> Google
+          <button type="button" class="provider-tab" id="tab-anthropic" onclick="switchProvider('anthropic')">
+            <span class="ptab-dot" style="background:#cc785c;"></span> Anthropic
           </button>
-        </div>
-
-        <div class="provider-panel" id="panel-anthropic" style="display:none;">
-          <div class="provider-info">
-            <strong>Claude Sonnet</strong> — Best image understanding, ~$0.005/analysis
-            <a href="https://console.anthropic.com/settings/keys" target="_blank">Get key →</a>
-          </div>
-          <div class="key-row">
-            <input type="password" id="key-anthropic" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('anthropic')">
-            <button type="button" class="btn-show" onclick="toggleVis('anthropic')" id="show-anthropic">SHOW</button>
-          </div>
-          <div class="key-actions">
-            <label class="save-label">
-              <input type="checkbox" id="save-anthropic" onchange="handleSave('anthropic')" style="accent-color:var(--accent);width:13px;height:13px;">
-              SAVE IN BROWSER
-            </label>
-            <span class="saved-badge" id="saved-anthropic">✓ SAVED</span>
-            <button type="button" class="btn-clear" id="clear-anthropic" onclick="clearKey('anthropic')">✕ CLEAR</button>
-          </div>
-        </div>
-
-        <div class="provider-panel" id="panel-openai" style="display:none;">
-          <div class="provider-info">
-            <strong>GPT-4o</strong> — Strong vision model, ~$0.007/analysis
-            <a href="https://platform.openai.com/api-keys" target="_blank">Get key →</a>
-          </div>
-          <div class="key-row">
-            <input type="password" id="key-openai" placeholder="sk-proj-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('openai')">
-            <button type="button" class="btn-show" onclick="toggleVis('openai')" id="show-openai">SHOW</button>
-          </div>
-          <div class="key-actions">
-            <label class="save-label">
-              <input type="checkbox" id="save-openai" onchange="handleSave('openai')" style="accent-color:var(--accent);width:13px;height:13px;">
-              SAVE IN BROWSER
-            </label>
-            <span class="saved-badge" id="saved-openai">✓ SAVED</span>
-            <button type="button" class="btn-clear" id="clear-openai" onclick="clearKey('openai')">✕ CLEAR</button>
-          </div>
         </div>
 
         <div class="provider-panel" id="panel-google">
@@ -844,6 +837,47 @@
             <span class="saved-badge" id="saved-google">✓ SAVED</span>
             <button type="button" class="btn-clear" id="clear-google" onclick="clearKey('google')">✕ CLEAR</button>
           </div>
+          <div id="keystatus-google" style="display:none;margin-top:10px;"></div>
+        </div>
+
+        <div class="provider-panel" id="panel-openai" style="display:none;">
+          <div class="provider-info">
+            <strong>GPT-4o</strong> — Strong vision model, ~$0.007/analysis
+            <a href="https://platform.openai.com/api-keys" target="_blank">Get key →</a>
+          </div>
+          <div class="key-row">
+            <input type="password" id="key-openai" placeholder="sk-proj-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('openai')">
+            <button type="button" class="btn-show" onclick="toggleVis('openai')" id="show-openai">SHOW</button>
+          </div>
+          <div class="key-actions">
+            <label class="save-label">
+              <input type="checkbox" id="save-openai" onchange="handleSave('openai')" style="accent-color:var(--accent);width:13px;height:13px;">
+              SAVE IN BROWSER
+            </label>
+            <span class="saved-badge" id="saved-openai">✓ SAVED</span>
+            <button type="button" class="btn-clear" id="clear-openai" onclick="clearKey('openai')">✕ CLEAR</button>
+          </div>
+          <div id="keystatus-openai" style="display:none;margin-top:10px;"></div>
+        </div>
+
+        <div class="provider-panel" id="panel-anthropic" style="display:none;">
+          <div class="provider-info">
+            <strong>Claude Sonnet</strong> — Best image understanding, ~$0.005/analysis
+            <a href="https://console.anthropic.com/settings/keys" target="_blank">Get key →</a>
+          </div>
+          <div class="key-row">
+            <input type="password" id="key-anthropic" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false" oninput="autoSaveKey('anthropic')">
+            <button type="button" class="btn-show" onclick="toggleVis('anthropic')" id="show-anthropic">SHOW</button>
+          </div>
+          <div class="key-actions">
+            <label class="save-label">
+              <input type="checkbox" id="save-anthropic" onchange="handleSave('anthropic')" style="accent-color:var(--accent);width:13px;height:13px;">
+              SAVE IN BROWSER
+            </label>
+            <span class="saved-badge" id="saved-anthropic">✓ SAVED</span>
+            <button type="button" class="btn-clear" id="clear-anthropic" onclick="clearKey('anthropic')">✕ CLEAR</button>
+          </div>
+          <div id="keystatus-anthropic" style="display:none;margin-top:10px;"></div>
         </div>
       </div>
 
@@ -1008,7 +1042,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v1.6 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v1.8 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1191,14 +1225,71 @@ async function submitFeedback(e) {
 // ── Provider management ───────────────────────────────────────────────────────
 const PROVIDERS = ['anthropic', 'openai', 'google'];
 let _activeProvider = 'google';
+let _keyValid       = false;   // true only after a successful validation
+let _validateTimer  = null;    // debounce handle
+
+const FAQ_URLS = {
+  google:    'https://ai.google.dev/gemini-api/docs/troubleshooting',
+  openai:    'https://help.openai.com/en/articles/6897026-api-key-troubleshooting',
+  anthropic: 'https://support.anthropic.com/en/articles/8087626-i-m-having-trouble-with-my-api-key',
+};
 
 function getActiveKey() {
   const el = document.getElementById('key-' + _activeProvider);
   return el ? el.value.trim() : '';
 }
 
+function setKeyStatus(provider, state) {
+  // state: 'hidden' | 'checking' | 'valid' | 'invalid'
+  const wrap = document.getElementById('keystatus-' + provider);
+  if (!wrap) return;
+  if (state === 'hidden') { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  wrap.style.display = 'block';
+  if (state === 'checking') {
+    wrap.innerHTML = '<span class="key-status checking">⟳ CHECKING KEY…</span>';
+  } else if (state === 'valid') {
+    wrap.innerHTML = '<span class="key-status valid">✓ VALID</span>';
+  } else if (state === 'invalid') {
+    wrap.innerHTML = `<a class="key-status invalid" href="${FAQ_URLS[provider]}" target="_blank">✕ INVALID — CLICK FOR HELP</a>`;
+  }
+}
+
+async function validateKey(provider, key) {
+  // Make a minimal cheap test call to confirm the key works
+  try {
+    if (provider === 'google') {
+      const res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'Hi' }] }], generationConfig: { maxOutputTokens: 5 } }) }
+      );
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+    } else if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({ model: 'gpt-4o', max_tokens: 5, messages: [{ role: 'user', content: 'Hi' }] })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+    } else if (provider === 'anthropic') {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': key,
+          'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 5,
+          messages: [{ role: 'user', content: 'Hi' }] })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+    }
+    return true;
+  } catch { return false; }
+}
+
 function checkAPIGate() {
-  const hasKey   = !!getActiveKey();
+  const hasKey   = _keyValid;
   const hasImage = !!uploadedBase64;
   const btn = document.getElementById('btnAnalyze');
   if (btn) {
@@ -1215,12 +1306,16 @@ function checkAPIGate() {
 
 function switchProvider(name) {
   _activeProvider = name;
+  _keyValid = false;
   PROVIDERS.forEach(p => {
     document.getElementById('panel-' + p).style.display = p === name ? 'block' : 'none';
     document.getElementById('tab-'   + p).classList.toggle('active', p === name);
   });
   localStorage.setItem('lasergrbl_last_provider', name);
-  checkAPIGate();
+  // Re-check the newly active provider's key if one exists
+  const key = getActiveKey();
+  if (key) triggerKeyValidation(name, key);
+  else checkAPIGate();
 }
 
 function toggleVis(provider) {
@@ -1244,12 +1339,36 @@ function handleSave(provider) {
   }
 }
 
+function triggerKeyValidation(provider, key) {
+  // Debounce: wait 800ms after user stops typing before hitting the API
+  clearTimeout(_validateTimer);
+  setKeyStatus(provider, 'checking');
+  _keyValid = false;
+  checkAPIGate();
+  _validateTimer = setTimeout(async () => {
+    const valid = await validateKey(provider, key);
+    _keyValid = valid;
+    setKeyStatus(provider, valid ? 'valid' : 'invalid');
+    // Also reset suitability score so it re-runs with the new valid key
+    const wrap = document.getElementById('confidenceWrap');
+    if (wrap) wrap.style.display = 'none';
+    checkAPIGate();
+  }, 800);
+}
+
 function autoSaveKey(provider) {
   if (document.getElementById('save-' + provider).checked) {
     const key = document.getElementById('key-' + provider).value.trim();
     if (key) localStorage.setItem('lasergrbl_key_' + provider, key);
   }
-  checkAPIGate();
+  const key = getActiveKey();
+  if (key.length > 8) {
+    triggerKeyValidation(provider, key);
+  } else {
+    _keyValid = false;
+    setKeyStatus(provider, key.length > 0 ? 'checking' : 'hidden');
+    checkAPIGate();
+  }
 }
 
 function clearKey(provider) {
@@ -1258,6 +1377,9 @@ function clearKey(provider) {
   document.getElementById('save-'  + provider).checked = false;
   document.getElementById('saved-' + provider).style.display = 'none';
   document.getElementById('clear-' + provider).style.display = 'none';
+  _keyValid = false;
+  setKeyStatus(provider, 'hidden');
+  checkAPIGate();
 }
 
 function loadSavedKeys() {
@@ -1271,10 +1393,21 @@ function loadSavedKeys() {
     }
   });
   const lastProvider = localStorage.getItem('lasergrbl_last_provider');
-  if (lastProvider && PROVIDERS.includes(lastProvider)) switchProvider(lastProvider);
+  if (lastProvider && PROVIDERS.includes(lastProvider)) {
+    // switchProvider handles tab UI + triggers validation
+    _activeProvider = lastProvider;
+    PROVIDERS.forEach(p => {
+      document.getElementById('panel-' + p).style.display = p === lastProvider ? 'block' : 'none';
+      document.getElementById('tab-'   + p).classList.toggle('active', p === lastProvider);
+    });
+  }
+  // Validate whatever key is loaded for the active provider
+  const key = getActiveKey();
+  if (key) triggerKeyValidation(_activeProvider, key);
+  else checkAPIGate();
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadSavedKeys(); checkAPIGate(); });
+document.addEventListener('DOMContentLoaded', () => { loadSavedKeys(); });
 
 // ── File handling ─────────────────────────────────────────────────────────────
 let uploadedFile   = null;
@@ -1343,7 +1476,7 @@ async function callAnthropic(apiKey, prompt) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: uploadedFile.type, data: uploadedBase64 } },
         { type: 'text', text: prompt }
@@ -1364,7 +1497,7 @@ async function callOpenAI(apiKey, prompt) {
     },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 1000,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: [
         { type: 'image_url', image_url: { url: 'data:' + uploadedFile.type + ';base64,' + uploadedBase64 } },
         { type: 'text', text: prompt }
@@ -1387,7 +1520,7 @@ async function callGoogle(apiKey, prompt) {
           { inline_data: { mime_type: uploadedFile.type, data: uploadedBase64 } },
           { text: prompt }
         ]}],
-        generationConfig: { maxOutputTokens: 1000 }
+        generationConfig: { maxOutputTokens: 2000 }
       })
     }
   );
@@ -1558,47 +1691,17 @@ function buildPrompt(laserType, material, operation, outputSize, extraNotes) {
     mark_metal:     'metal surface marking',
   };
 
-  return `You are a laser engraving expert with deep knowledge of LaserGRBL software settings.
-
-I have uploaded an image I want to engrave/cut. Analyze it and provide LaserGRBL settings.
+  return `You are a laser engraving expert. Output ONLY a raw JSON object. No markdown. No backticks. No text before or after the JSON. Keep all string values under 80 characters.
 
 SETUP:
 - Laser: ${laserNames[laserType] || laserType}
 - Material: ${materialNames[material] || material}
 - Operation: ${opNames[operation] || operation}
-- Desired output size (longest side): ${outputSize || '100'} mm
-- Extra notes: ${extraNotes || 'none'}
+- Output size: ${outputSize || '100'}mm
+- Notes: ${extraNotes || 'none'}
 
-Analyze the image carefully for: complexity, contrast, fine details, fill areas, and operation suitability.
-
-Respond ONLY with a single JSON object (no markdown, no preamble):
-
-{
-  "confidence": "high" | "medium" | "low",
-  "settings": {
-    "speed_mm_min": <number>,
-    "speed_range": "<min>–<max> mm/min",
-    "power_percent": <number>,
-    "power_range": "<min>%–<max>%",
-    "passes": <number>,
-    "line_interval_mm": <number>,
-    "dpi": <number>,
-    "s_max": <number>,
-    "overscan": <number>
-  },
-  "image_analysis": {
-    "complexity": "simple" | "moderate" | "complex" | "photo",
-    "contrast": "high" | "medium" | "low",
-    "fine_details": true | false,
-    "large_fill_areas": true | false,
-    "recommended_mode": "<LaserGRBL import mode>",
-    "tags": ["<tag1>", "<tag2>"]
-  },
-  "analysis": "<2-3 sentence summary>",
-  "tips": ["<tip 1>", "<tip 2>", "<tip 3>"],
-  "warnings": ["<warning or empty array>"],
-  "lasergrbl_path": "<where to enter these values in LaserGRBL>"
-}`;
+Use this exact structure, replace values only:
+{"confidence":"high","settings":{"speed_mm_min":0,"speed_range":"0-0","power_percent":0,"power_range":"0-0","passes":1,"line_interval_mm":0.1,"dpi":254,"s_max":255,"overscan":2},"image_analysis":{"complexity":"simple","contrast":"high","fine_details":false,"large_fill_areas":false,"recommended_mode":"1bit BW","tags":["example"]},"analysis":"Brief summary here.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[],"lasergrbl_path":"Brief path description."}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
