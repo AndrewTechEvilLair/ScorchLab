@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v1.8 — API key validation before any AI calls; checking/valid/invalid status badge; Google tab first; suitability score gated on valid key
+<!-- v2.1 — System persona added to all three providers; JSON rules moved to system prompt for better compliance
+     v2.0 — Results now match LaserGRBL screens exactly (Screen 1: Import Raster Image / Screen 2: Target Image); field names, order and categories match the UI
+     v1.9 — Reset score and results when a new image is selected
+     v1.8 — API key validation before any AI calls; checking/valid/invalid status badge; Google tab first; suitability score gated on valid key
      v1.7 — Bump max_tokens to 2000; tighter prompt prevents truncation; explicit no-backtick instruction
      v1.6 — Move status bar above analyze button; nuclear JSON extraction (immune to markdown fences)
      v1.5 — Fix JSON parsing (markdown fences), fix score 0/100 bug, always show reason on failure
@@ -1042,7 +1045,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v1.8 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.1 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1427,16 +1430,35 @@ uploadZone.addEventListener('drop', e => {
   if (file) handleFile(file);
 });
 
+function resetAnalysis() {
+  // Reset suitability score
+  document.getElementById('confidenceWrap').style.display = 'none';
+  document.getElementById('confScore').textContent = '—';
+  document.getElementById('confScore').style.color = '';
+  document.getElementById('confFill').style.width  = '0%';
+  document.getElementById('confFactors').innerHTML = '';
+  document.getElementById('confNote').textContent  = '';
+  // Reset main results
+  document.getElementById('resultsBlock').style.display  = 'none';
+  document.getElementById('errorBlock').style.display    = 'none';
+  document.getElementById('settingsGrid').innerHTML      = '';
+  document.getElementById('imageAnalysisContent').innerHTML = '';
+  document.getElementById('detailedContent').innerHTML   = '';
+  _lastResult = null;
+}
+
 function handleFile(file) {
   if (!file || !file.type.startsWith('image/')) return;
   uploadedFile = file;
   document.getElementById('filename').textContent = file.name;
 
+  // Reset everything from the previous image
+  resetAnalysis();
+
   const reader = new FileReader();
   reader.onload = ev => {
     uploadedBase64 = ev.target.result.split(',')[1];
 
-    // FIX #3: Show preview image properly
     const img = document.getElementById('imagePreview');
     img.src = ev.target.result;
     img.onload = () => {
@@ -1445,10 +1467,7 @@ function handleFile(file) {
       document.getElementById('imgMode').textContent = file.type.split('/')[1].toUpperCase();
     };
 
-    // Show the preview wrapper (img is visible by default now)
     document.getElementById('imagePreviewWrap').style.display = 'block';
-
-    // Show image analysis panel
     document.getElementById('procPanel').style.display = 'block';
 
     checkAPIGate();
@@ -1465,6 +1484,29 @@ async function callActiveProvider(key, prompt) {
   return await callGoogle(key, prompt);
 }
 
+// ── Persona / system prompt ───────────────────────────────────────────────────
+const SYSTEM_PERSONA = `You are LaserGRBL Advisor, an expert laser engraving technician with 10+ years of hands-on experience operating diode, CO2, and fiber lasers using LaserGRBL software on Windows.
+
+Your deep expertise covers:
+- All LaserGRBL import settings across both dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2)
+- Material behavior under laser: wood, acrylic, leather, metal, slate, glass, cardboard, fabric
+- GRBL firmware configuration ($30 S-max, $32 laser mode, feed rates)
+- When to use Line To Line vs 1bit BW Dithering vs Vectorize! conversion tools
+- M3 Constant vs M4 Dynamic laser mode tradeoffs
+- How image characteristics (contrast, resolution, complexity, fine detail) affect engraving quality
+
+Your response rules — follow these exactly, no exceptions:
+1. Output ONLY a raw JSON object. Zero markdown. Zero backticks. Zero prose before or after.
+2. All string values must be under 80 characters.
+3. Use only the exact field names specified in the user prompt.
+4. For "conversion_tool" use exactly one of: "Line To Line", "1bit BW Dithering", "Vectorize!"
+5. For "laser_mode" use exactly one of: "M3 Constant", "M4 Dynamic"
+6. For "resize" use exactly one of: "High Quality Bicubic", "Nearest Neighbour"
+7. For "grayscale_conversion" use exactly one of: "SimpleAverage", "WeightAverage", "OpticalCorrect", "Custom"
+8. "brightness" and "contrast" are integers from -100 to 100 (0 = no change)
+9. "bw_threshold_value" is an integer 0-255
+10. Never truncate the JSON. Always complete the full object.`;
+
 async function callAnthropic(apiKey, prompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -1477,6 +1519,7 @@ async function callAnthropic(apiKey, prompt) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
+      system: SYSTEM_PERSONA,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: uploadedFile.type, data: uploadedBase64 } },
         { type: 'text', text: prompt }
@@ -1498,10 +1541,13 @@ async function callOpenAI(apiKey, prompt) {
     body: JSON.stringify({
       model: 'gpt-4o',
       max_tokens: 2000,
-      messages: [{ role: 'user', content: [
-        { type: 'image_url', image_url: { url: 'data:' + uploadedFile.type + ';base64,' + uploadedBase64 } },
-        { type: 'text', text: prompt }
-      ]}]
+      messages: [
+        { role: 'system', content: SYSTEM_PERSONA },
+        { role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + uploadedFile.type + ';base64,' + uploadedBase64 } },
+          { type: 'text', text: prompt }
+        ]}
+      ]
     })
   });
   const data = await res.json();
@@ -1516,6 +1562,7 @@ async function callGoogle(apiKey, prompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PERSONA }] },
         contents: [{ parts: [
           { inline_data: { mime_type: uploadedFile.type, data: uploadedBase64 } },
           { text: prompt }
@@ -1541,19 +1588,9 @@ async function analyzeImageQuality() {
   document.getElementById('confFill').style.width  = '0%';
   document.getElementById('confFactors').innerHTML = '';
 
-  const prompt = `Analyze this image for laser engraving suitability. Respond ONLY with a JSON object, no markdown:
-{
-  "score": 85,
-  "note": "one sentence summary of suitability",
-  "factors": [
-    {"label": "Resolution", "rating": "good|warn|bad", "detail": "short note"},
-    {"label": "Contrast",   "rating": "good|warn|bad", "detail": "short note"},
-    {"label": "Complexity", "rating": "good|warn|bad", "detail": "short note"},
-    {"label": "Fine Detail","rating": "good|warn|bad", "detail": "short note"},
-    {"label": "Background", "rating": "good|warn|bad", "detail": "short note"}
-  ]
-}
-Score 0-100: high contrast=good, clean background=good, fine lines+high res=good, photo complexity=harder, low res=bad.`;
+  const prompt = `Analyze this image for laser engraving suitability. Output ONLY this JSON, no markdown, replace values only:
+{"score":85,"note":"one sentence suitability summary","factors":[{"label":"Resolution","rating":"good","detail":"short note"},{"label":"Contrast","rating":"good","detail":"short note"},{"label":"Complexity","rating":"warn","detail":"short note"},{"label":"Fine Detail","rating":"good","detail":"short note"},{"label":"Background","rating":"good","detail":"short note"}]}
+Score 0-100. Ratings: good/warn/bad. High contrast=good, clean bg=good, fine lines+hi-res=good, photo complexity=harder, low res=bad.`;
 
   try {
     const text    = await callActiveProvider(key, prompt);
@@ -1691,7 +1728,7 @@ function buildPrompt(laserType, material, operation, outputSize, extraNotes) {
     mark_metal:     'metal surface marking',
   };
 
-  return `You are a laser engraving expert. Output ONLY a raw JSON object. No markdown. No backticks. No text before or after the JSON. Keep all string values under 80 characters.
+  return `Analyze the uploaded image and provide LaserGRBL settings for this job.
 
 SETUP:
 - Laser: ${laserNames[laserType] || laserType}
@@ -1700,56 +1737,87 @@ SETUP:
 - Output size: ${outputSize || '100'}mm
 - Notes: ${extraNotes || 'none'}
 
-Use this exact structure, replace values only:
-{"confidence":"high","settings":{"speed_mm_min":0,"speed_range":"0-0","power_percent":0,"power_range":"0-0","passes":1,"line_interval_mm":0.1,"dpi":254,"s_max":255,"overscan":2},"image_analysis":{"complexity":"simple","contrast":"high","fine_details":false,"large_fill_areas":false,"recommended_mode":"1bit BW","tags":["example"]},"analysis":"Brief summary here.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[],"lasergrbl_path":"Brief path description."}`
+Recommend exact LaserGRBL settings matching the two import dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2).
+
+Use this exact JSON structure, replace values only:
+{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":0,"contrast":0,"bw_threshold_enabled":false,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1,"width_mm":100,"height_mm":100},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
 let _lastResult = null;
 
+function settingRow(label, value, unit) {
+  return `<div class="setting-card">
+    <div class="setting-label">${label}</div>
+    <div class="setting-value">${value ?? '—'}<span class="setting-unit">${unit || ''}</span></div>
+  </div>`;
+}
+
 function renderResults(r) {
   _lastResult = r;
-  const s = r.settings;
+  const s1 = r.screen1 || {};
+  const s2 = r.screen2 || {};
 
   const badge = document.getElementById('confidenceBadge');
   badge.textContent = (r.confidence || 'unknown').toUpperCase() + ' CONFIDENCE';
   badge.className = 'badge ' + (r.confidence === 'high' ? 'badge-ok' : r.confidence === 'medium' ? 'badge-warn' : 'badge-danger');
 
-  const cards = [
-    { label: 'Speed',         value: s.speed_mm_min,    unit: 'mm/min', range: s.speed_range },
-    { label: 'Power',         value: s.power_percent,   unit: '%',      range: s.power_range },
-    { label: 'Passes',        value: s.passes,          unit: 'passes', range: 'total runs' },
-    { label: 'Line Interval', value: s.line_interval_mm,unit: 'mm',     range: `${s.dpi} DPI` },
-    { label: 'S-Max Value',   value: s.s_max,           unit: '',       range: 'GRBL $30 setting' },
-    { label: 'Overscan',      value: s.overscan,        unit: '%',      range: 'raster edge comp' },
-  ];
+  // Build the two-screen categorized layout
+  document.getElementById('settingsGrid').innerHTML = `
+    <div style="grid-column:1/-1;">
 
-  document.getElementById('settingsGrid').innerHTML = cards.map(c => `
-    <div class="setting-card">
-      <div class="setting-label">${c.label}</div>
-      <div class="setting-value">${c.value ?? '—'}<span class="setting-unit">${c.unit}</span></div>
-      <div class="setting-range"><em>${c.range || ''}</em></div>
-    </div>
-  `).join('');
-
-  document.getElementById('lasergrblTipText').textContent = r.lasergrbl_path || '';
-
-  // FIX #2: Now renders into elements that actually exist in the DOM
-  const ia = r.image_analysis || {};
-  document.getElementById('imageAnalysisContent').innerHTML = `
-    <div class="analysis-section">
-      <h3>Image Analysis</h3>
-      <div class="image-chips">
-        <div class="chip ${ia.complexity ? 'active' : ''}">Complexity: ${ia.complexity || '—'}</div>
-        <div class="chip ${ia.contrast   ? 'active' : ''}">Contrast: ${ia.contrast || '—'}</div>
-        <div class="chip ${ia.fine_details ? 'active' : ''}">Fine details: ${ia.fine_details ? 'Yes' : 'No'}</div>
-        <div class="chip ${ia.large_fill_areas ? 'active' : ''}">Large fills: ${ia.large_fill_areas ? 'Yes' : 'No'}</div>
+      <div class="analysis-section" style="margin-bottom:8px;">
+        <h3>Screen 1 — Import Raster Image</h3>
       </div>
-      <div class="highlight-box">⟶ Recommended LaserGRBL import mode: <strong>${ia.recommended_mode || '—'}</strong></div>
-      ${(ia.tags || []).map(t => `<span class="chip active">${t}</span>`).join(' ')}
-      <p style="margin-top:14px;">${r.analysis || ''}</p>
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Parameters</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Resize', s1.resize, '')}
+        ${settingRow('Grayscale Conversion', s1.grayscale_conversion, '')}
+        ${settingRow('Brightness', s1.brightness, '')}
+        ${settingRow('Contrast', s1.contrast, '')}
+        ${settingRow('BW Threshold', s1.bw_threshold_enabled ? 'ON — ' + s1.bw_threshold_value : 'OFF', '')}
+      </div>
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Conversion Tool</div>
+      <div class="settings-grid" style="margin-bottom:24px;">
+        ${settingRow('Tool', s1.conversion_tool, '')}
+        ${settingRow('Lines / mm', s1.lines_per_mm, 'l/mm')}
+      </div>
+
+      <div class="analysis-section" style="margin-bottom:8px;">
+        <h3>Screen 2 — Target Image Size and Options</h3>
+      </div>
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Speed</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Engraving Speed', s2.engraving_speed_mm_min, 'mm/min')}
+      </div>
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Laser Options</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Laser Mode', s2.laser_mode, '')}
+        ${settingRow('S-MIN', s2.s_min, '')}
+        ${settingRow('S-MAX', s2.s_max, '')}
+      </div>
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Image Size and Position</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Width', s2.width_mm, 'mm')}
+        ${settingRow('Height', s2.height_mm, 'mm')}
+        ${settingRow('Passes', s2.passes, '')}
+      </div>
+
     </div>
   `;
+
+  document.getElementById('lasergrblTip').style.display = 'none';
+
+  document.getElementById('imageAnalysisContent').innerHTML = r.analysis ? `
+    <div class="analysis-section">
+      <h3>Analysis</h3>
+      <p>${r.analysis}</p>
+    </div>` : '';
 
   let detailed = '';
   if (r.tips?.length) {
@@ -1792,33 +1860,43 @@ function getJobLabel() {
 
 function exportGCode() {
   if (!_lastResult) return;
-  const s      = _lastResult.settings;
-  const now    = new Date().toISOString().slice(0,16).replace('T',' ');
-  const sMax   = s.s_max || 255;
-  const sValue = Math.round((s.power_percent / 100) * sMax);
-  const speed  = s.speed_mm_min || 1000;
+  const s1 = _lastResult.screen1 || {};
+  const s2 = _lastResult.screen2 || {};
+  const now = new Date().toISOString().slice(0,16).replace('T',' ');
+  const sMax   = s2.s_max || 255;
+  const sMin   = s2.s_min || 0;
+  const speed  = s2.engraving_speed_mm_min || 1500;
 
   const gcode = [
     '; ╔══════════════════════════════════════════╗',
     '; ║   LaserGRBL Advisor — Generated Settings  ║',
     '; ╚══════════════════════════════════════════╝',
-    `; Job:       ${getJobLabel()}`,
-    `; Generated: ${now}`,
+    `; Job:        ${getJobLabel()}`,
+    `; Generated:  ${now}`,
     `; Confidence: ${_lastResult.confidence?.toUpperCase()}`,
     ';',
-    `; Speed:         ${speed} mm/min`,
-    `; Power:         ${s.power_percent}% (S${sValue} of S${sMax})`,
-    `; Passes:        ${s.passes}`,
-    `; Line interval: ${s.line_interval_mm} mm  (${s.dpi} DPI)`,
-    `; Overscan:      ${s.overscan}%`,
+    '; ── SCREEN 1: Import Raster Image ──────────',
+    `; Resize:              ${s1.resize}`,
+    `; Grayscale:           ${s1.grayscale_conversion}`,
+    `; Brightness:          ${s1.brightness}`,
+    `; Contrast:            ${s1.contrast}`,
+    `; BW Threshold:        ${s1.bw_threshold_enabled ? 'ON (' + s1.bw_threshold_value + ')' : 'OFF'}`,
+    `; Conversion Tool:     ${s1.conversion_tool}`,
+    `; Lines/mm:            ${s1.lines_per_mm}`,
+    ';',
+    '; ── SCREEN 2: Target Image Size and Options ─',
+    `; Engraving Speed:     ${speed} mm/min`,
+    `; Laser Mode:          ${s2.laser_mode}`,
+    `; S-MIN:               ${sMin}`,
+    `; S-MAX:               ${sMax}`,
+    `; Passes:              ${s2.passes}`,
+    `; Width:               ${s2.width_mm} mm`,
+    `; Height:              ${s2.height_mm} mm`,
     '',
     `$30=${sMax}`,
-    'G21', 'G90', `G1 F${speed}`,
-    '',
-    `; M3 S${sValue}`,
-    `; G1 X10 F${speed}`,
-    '; M5',
-    '; G0 X0',
+    'G21', 'G90',
+    `G1 F${speed}`,
+    `; ${s2.laser_mode === 'M4 Dynamic' ? 'M4' : 'M3'} S${sMax}`,
   ].join('\n');
 
   downloadFile(`lasergrbl-settings-${Date.now()}.nc`, gcode, 'text/plain');
@@ -1826,18 +1904,19 @@ function exportGCode() {
 
 function exportCustomButton() {
   if (!_lastResult) return;
-  const s      = _lastResult.settings;
-  const sMax   = s.s_max || 255;
-  const sValue = Math.round((s.power_percent / 100) * sMax);
-  const speed  = s.speed_mm_min || 1000;
-  const label  = getJobLabel().slice(0, 30);
+  const s2    = _lastResult.screen2 || {};
+  const sMax  = s2.s_max || 255;
+  const sMin  = s2.s_min || 0;
+  const speed = s2.engraving_speed_mm_min || 1500;
+  const mode  = s2.laser_mode === 'M4 Dynamic' ? 'M4' : 'M3';
+  const label = getJobLabel().slice(0, 30);
 
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <CustomButton>
   <ButtonText>${escXml(label)}</ButtonText>
   <ButtonColor>255, 107, 26</ButtonColor>
-  <GrblCode>$30=${sMax}\nG21\nG90\nG1 F${speed}\n</GrblCode>
-  <ToolTip>Speed: ${speed} mm/min | Power: ${s.power_percent}% (S${sValue}/${sMax})</ToolTip>
+  <GrblCode>$30=${sMax}\nG21\nG90\nG1 F${speed}\n${mode} S${sMax}\n</GrblCode>
+  <ToolTip>Speed: ${speed} mm/min | S-MIN: ${sMin} | S-MAX: ${sMax} | ${s2.laser_mode}</ToolTip>
   <Confirm>false</Confirm>
 </CustomButton>`;
 
@@ -1850,10 +1929,11 @@ function escXml(str) {
 
 function exportTextSummary() {
   if (!_lastResult) return;
-  const s   = _lastResult.settings;
-  const ia  = _lastResult.image_analysis || {};
   const now = new Date().toLocaleString();
   const line = '─'.repeat(50);
+
+  const s1 = _lastResult.screen1 || {};
+  const s2 = _lastResult.screen2 || {};
 
   const txt = [
     '╔══════════════════════════════════════════════════╗',
@@ -1862,20 +1942,32 @@ function exportTextSummary() {
     '', `Generated : ${now}`, `Job       : ${getJobLabel()}`,
     `Image     : ${document.getElementById('filename').textContent || 'unknown'}`,
     `Confidence: ${_lastResult.confidence?.toUpperCase()}`, '',
-    line, '  LASERGRBL SETTINGS', line,
-    `  Speed          : ${s.speed_mm_min} mm/min   (range: ${s.speed_range})`,
-    `  Power          : ${s.power_percent}%         (range: ${s.power_range})`,
-    `  Passes         : ${s.passes}`,
-    `  Line Interval  : ${s.line_interval_mm} mm`,
-    `  DPI            : ${s.dpi}`,
-    `  S-Max ($30)    : ${s.s_max}`,
-    `  Overscan       : ${s.overscan}%`, '',
-    line, '  IMAGE ANALYSIS', line,
-    `  Import Mode    : ${ia.recommended_mode || '—'}`,
-    `  Complexity     : ${ia.complexity || '—'}`,
-    `  Contrast       : ${ia.contrast || '—'}`,
-    `  Fine Details   : ${ia.fine_details ? 'Yes' : 'No'}`,
-    `  Large Fill Areas: ${ia.large_fill_areas ? 'Yes' : 'No'}`, '',
+    line, '  SCREEN 1 — Import Raster Image', line,
+    '  [ Parameters ]',
+    `  Resize                : ${s1.resize || '—'}`,
+    `  Grayscale Conversion  : ${s1.grayscale_conversion || '—'}`,
+    `  Brightness            : ${s1.brightness ?? '—'}`,
+    `  Contrast              : ${s1.contrast ?? '—'}`,
+    `  BW Threshold          : ${s1.bw_threshold_enabled ? 'ON (' + s1.bw_threshold_value + ')' : 'OFF'}`,
+    '',
+    '  [ Conversion Tool ]',
+    `  Tool                  : ${s1.conversion_tool || '—'}`,
+    `  Lines / mm            : ${s1.lines_per_mm || '—'} l/mm`,
+    '',
+    line, '  SCREEN 2 — Target Image Size and Options', line,
+    '  [ Speed ]',
+    `  Engraving Speed       : ${s2.engraving_speed_mm_min || '—'} mm/min`,
+    '',
+    '  [ Laser Options ]',
+    `  Laser Mode            : ${s2.laser_mode || '—'}`,
+    `  S-MIN                 : ${s2.s_min ?? '—'}`,
+    `  S-MAX                 : ${s2.s_max || '—'}`,
+    '',
+    '  [ Image Size and Position ]',
+    `  Width                 : ${s2.width_mm || '—'} mm`,
+    `  Height                : ${s2.height_mm || '—'} mm`,
+    `  Passes                : ${s2.passes || '—'}`,
+    '',
     line, '  ANALYSIS', line,
     `  ${_lastResult.analysis || ''}`, '',
     line, '  TIPS', line,
@@ -1884,8 +1976,6 @@ function exportTextSummary() {
       line, '  ⚠ WARNINGS', line,
       ...(_lastResult.warnings.map(w => `  ! ${w}`)), '',
     ] : []),
-    line, '  WHERE TO ENTER IN LASERGRBL', line,
-    `  ${_lastResult.lasergrbl_path || ''}`, '',
     line, '  ALWAYS DO A TEST BURN ON SCRAP MATERIAL FIRST', line,
   ].join('\n');
 
