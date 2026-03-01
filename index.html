@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.2 — Separate honest scoring persona for quality check; quality analysis always re-runs on new image
+<!-- v2.3 — Fix quality JSON parse error; remove anchored 85 score; ban decimals; nuclear brace extraction for quality parser
+     v2.2 — Separate honest scoring persona for quality check; quality analysis always re-runs on new image
      v2.1 — System persona added to all three providers; JSON rules moved to system prompt for better compliance
      v2.0 — Results now match LaserGRBL screens exactly (Screen 1: Import Raster Image / Screen 2: Target Image); field names, order and categories match the UI
      v1.9 — Reset score and results when a new image is selected
@@ -1046,7 +1047,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v2.2 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.3 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1604,21 +1605,31 @@ async function analyzeImageQuality() {
   document.getElementById('confFill').style.width  = '0%';
   document.getElementById('confFactors').innerHTML = '';
 
-  const prompt = `Analyze this image for laser engraving suitability. Output ONLY this JSON, no markdown, replace values only:
-{"score":85,"note":"one sentence suitability summary","factors":[{"label":"Resolution","rating":"good","detail":"short note"},{"label":"Contrast","rating":"good","detail":"short note"},{"label":"Complexity","rating":"warn","detail":"short note"},{"label":"Fine Detail","rating":"good","detail":"short note"},{"label":"Background","rating":"good","detail":"short note"}]}
-Score 0-100. Ratings: good/warn/bad. High contrast=good, clean bg=good, fine lines+hi-res=good, photo complexity=harder, low res=bad.`;
+  const prompt = `Analyze this image for laser engraving suitability. Output ONLY raw JSON, no markdown, no backticks.
+
+Rules:
+- "score" must be a whole integer 0-100. No decimals. No anchoring to round numbers — use precise values like 47, 63, 71, 82.
+- "note" is one short sentence under 60 chars. No apostrophes or special characters.
+- "rating" must be exactly one of: good, warn, bad
+- "detail" is under 40 chars. No apostrophes or special characters.
+- Most images score 40-70. Only truly exceptional images exceed 80. Be critical.
+
+Output this exact structure:
+{"score":0,"note":"","factors":[{"label":"Resolution","rating":"good","detail":""},{"label":"Contrast","rating":"good","detail":""},{"label":"Complexity","rating":"good","detail":""},{"label":"Fine Detail","rating":"good","detail":""},{"label":"Background","rating":"good","detail":""}]}`;
 
   try {
     const text    = await callActiveProvider(key, prompt, SYSTEM_PERSONA_QUALITY);
-    const raw     = text.match(/\{[\s\S]*\}/)?.[0] || null;
+    // Nuclear extraction: find first { and last } — immune to markdown wrapping
+    const firstBrace = text.indexOf('{');
+    const lastBrace  = text.lastIndexOf('}');
 
-    // If no JSON block found at all, show the raw text as a reason
-    if (!raw) {
+    if (firstBrace === -1 || lastBrace === -1) {
       document.getElementById('confScore').textContent = '— / 100';
       document.getElementById('confNote').textContent  = text.slice(0, 200) || 'No response received.';
       return;
     }
 
+    const raw = text.slice(firstBrace, lastBrace + 1);
     const cleaned = raw
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/[\u2018\u2019]/g, "'")
@@ -1627,7 +1638,7 @@ Score 0-100. Ratings: good/warn/bad. High contrast=good, clean bg=good, fine lin
     try { json = JSON.parse(cleaned); }
     catch { json = JSON.parse(raw); }
 
-    const score   = json.score ?? null;  // ?? so score of 0 is valid
+    const score   = json.score != null ? Math.round(Number(json.score)) : null;  // round to int, ?? so 0 is valid
     const factors = json.factors || [];
     const note    = json.note || 'No summary provided.';
 
