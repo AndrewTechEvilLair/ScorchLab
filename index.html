@@ -1422,7 +1422,14 @@ Score 0-100: high contrast=good, clean background=good, fine lines+high res=good
 
   try {
     const text    = await callActiveProvider(key, prompt);
-    const json    = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    const raw     = text.match(/\{[\s\S]*\}/)?.[0] || '{}';
+    const cleaned = raw
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
+    let json;
+    try { json = JSON.parse(cleaned); }
+    catch { json = JSON.parse(raw); }
     const score   = json.score || 0;
     const factors = json.factors || [];
     const color   = score >= 75 ? 'var(--green)' : score >= 50 ? '#ffaa00' : 'var(--red)';
@@ -1472,7 +1479,13 @@ async function runAnalysis() {
     const clean = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3)).replace(/```/g, '').trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Could not parse AI response. Raw: ' + text.slice(0, 300));
-    const result = JSON.parse(jsonMatch[0]);
+    const sanitized = jsonMatch[0]
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
+    let result;
+    try { result = JSON.parse(sanitized); }
+    catch { result = JSON.parse(jsonMatch[0]); }
     renderResults(result);
   } catch (err) {
     document.getElementById('errorBlock').style.display = 'block';
