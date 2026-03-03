@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.16 — Power unclamped: AI recommends freely 0-255; client-side warning injected if s_max >89%
+<!-- v2.18 — s_max scale changed from 255 to 1000 throughout prompt, template, and power warning
+     v2.17 — Fix AI anchoring to low s_max: template updated to 210, per-laser starting points added
+     v2.16 — Power unclamped: AI recommends freely 0-255; client-side warning injected if s_max >89%
      v2.15 — Fix s_max contradiction: removed "always 255" rule that conflicted with power guidance table
      v2.14 — Add BETA label to title
      v2.13 — Fix rule numbering (5b→5, cascade to 11); fix JSON template defaults (s_max 255→200, dither_algorithm example added)
@@ -794,7 +796,7 @@
   <header>
     <div class="logo-icon">⚡</div>
     <div>
-      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:28px;font-weight:900;letter-spacing:2px;">BETA</span> <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.16</span></h1>
+      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:28px;font-weight:900;letter-spacing:2px;">BETA</span> <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.18</span></h1>
       <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
     </div>
   </header>
@@ -1810,10 +1812,15 @@ Material speed modifiers:
 - Leather: increase speed 20%
 - Slate/stone: slow speed end of range
 - s_min: always 0.
-- s_max: recommend whatever power (0–255) the image, material, and laser require. No upper limit. Base s_max on 255 scale.
+- s_max: recommend whatever power (0–1000) the image, material, and laser require. No upper limit. Base s_max on 1000 scale.
+  Typical starting points (adjust up or down based on image and material):
+  Diode 5W: 750–900  |  Diode 10W: 600–750  |  Diode 20W: 400–620  |  Diode 40W: 350–500
+  CO2 30W: 430–670   |  CO2 40W: 350–590    |  CO2 60W: 275–510    |  CO2 80W: 235–430
+  Fiber 20W: 275–510 |  Fiber 50W: 195–355
+  These are starting points only — go higher or lower if the job demands it.
 
 Use this exact JSON structure, replace values only:
-{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":null,"conversion_tool":"1bit BW Dithering","dither_algorithm":"FloydSteinberg","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1000,"laser_mode":"M4 Dynamic","s_min":0,"s_max":200,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
+{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":null,"conversion_tool":"1bit BW Dithering","dither_algorithm":"FloydSteinberg","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1000,"laser_mode":"M4 Dynamic","s_min":0,"s_max":800,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
@@ -1893,7 +1900,7 @@ function renderResults(r) {
     </div>` : '';
 
   // Inject high-power warning if s_max > 89% of 255 (i.e. > ~227)
-  const powerPct = Math.round(((r.screen2?.s_max || 0) / 255) * 100);
+  const powerPct = Math.round(((r.screen2?.s_max || 0) / 1000) * 100);
   if (powerPct > 89) {
     r.warnings = r.warnings || [];
     const alreadyHasPowerWarn = r.warnings.some(w => w.toLowerCase().includes('power'));
