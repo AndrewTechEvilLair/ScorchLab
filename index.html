@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.11 — Bug fixes: async on triggerKeyValidation; webp added to file accept attribute
+<!-- v2.12 — Bug fixes: async on triggerKeyValidation; webp added to file accept attribute
      v2.10 — Bug fixes: async keyword on validateKey; autoSaveKey uses provider-specific key; render cleanup
      v2.9 — Correct dither algorithm names from actual LaserGRBL dropdown: Burks/Jarvis/Sierra2/Sierra3/SierraLight/Random
      v2.8 — Dithering algorithm selection: 8 algorithms with laser-specific guidance added to schema, render, exports
@@ -789,7 +789,7 @@
   <header>
     <div class="logo-icon">⚡</div>
     <div>
-      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.11</span></h1>
+      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.12</span></h1>
       <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
     </div>
   </header>
@@ -990,13 +990,6 @@
         </select>
       </div>
 
-      <!-- Output Size -->
-      <div class="form-group">
-        <label>Desired Output Size (longest side, mm)</label>
-        <input type="number" id="outputSize" value="100" min="1" max="1000"
-          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text);font-family:var(--mono);padding:10px;font-size:13px;outline:none;">
-      </div>
-
       <!-- Extra Notes -->
       <div class="form-group full">
         <label>Extra Notes (optional)</label>
@@ -1055,7 +1048,7 @@
 
 </div>
 
-<footer>LASERGRBL ADVISOR v2.11 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
+<footer>LASERGRBL ADVISOR v2.12 // AI-ASSISTED SETTINGS // ALWAYS TEST ON SCRAP FIRST // BUILT BY <a href="https://andrewtech.netlify.app" target="_blank" style="color:var(--accent);text-decoration:none;">ANDREWTECH</a></footer>
 
 <!-- Feedback widget styles -->
 <style>
@@ -1700,7 +1693,6 @@ async function runAnalysis() {
   const laserType  = document.getElementById('laserType').value;
   const material   = document.getElementById('material').value;
   const operation  = document.getElementById('operationType').value;
-  const outputSize = document.getElementById('outputSize').value;
   const extraNotes = document.getElementById('extraNotes').value;
   const apiKey     = getActiveKey();
 
@@ -1716,7 +1708,7 @@ async function runAnalysis() {
   document.getElementById('resultsBlock').style.display  = 'none';
   document.getElementById('errorBlock').style.display    = 'none';
 
-  const prompt = buildPrompt(laserType, material, operation, outputSize, extraNotes);
+  const prompt = buildPrompt(laserType, material, operation, extraNotes);
 
   try {
     const text  = await callActiveProvider(apiKey, prompt);
@@ -1743,7 +1735,7 @@ async function runAnalysis() {
 }
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
-function buildPrompt(laserType, material, operation, outputSize, extraNotes) {
+function buildPrompt(laserType, material, operation, extraNotes) {
   const laserNames = {
     diode_5w:  'Diode laser ~5W optical (e.g. Sculpfun S9, NEJE A40630)',
     diode_10w: 'Diode laser ~10W optical (e.g. Sculpfun S10, xTool D1 Pro 10W)',
@@ -1786,7 +1778,6 @@ SETUP:
 - Laser: ${laserNames[laserType] || laserType}
 - Material: ${materialNames[material] || material}
 - Operation: ${opNames[operation] || operation}
-- Output size: ${outputSize || '100'}mm
 - Notes: ${extraNotes || 'none'}
 
 Recommend exact LaserGRBL settings matching the two import dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2).
@@ -1798,8 +1789,30 @@ Field guidance:
 - bw_threshold_value: integer 0-255, default 128. Set when conversion_tool is "Line To Line", "Vectorize!", or "Centerline" — these show a BW Threshold checkbox+slider in LaserGRBL. Set to null when conversion_tool is "1bit BW Dithering" or "Pass Through" — those handle thresholding internally.
 - lines_per_mm: typical range 5-20. Higher = finer but slower.
 
+Speed and power guidance by laser type (engraving, not cutting):
+- Diode 5W:   speed 800–1500 mm/min, s_max 180–220 (70–85%). Lower speed or higher power for dark woods/MDF.
+- Diode 10W:  speed 1500–3000 mm/min, s_max 140–180 (55–70%).
+- Diode 20W:  speed 3000–6000 mm/min, s_max 100–150 (40–60%).
+- Diode 40W:  speed 5000–8000 mm/min, s_max 80–120 (30–47%).
+- CO2 30W:    speed 200–400 mm/min,   s_max 100–160 (40–63%).
+- CO2 40W:    speed 300–600 mm/min,   s_max 80–140 (30–55%).
+- CO2 60W:    speed 400–800 mm/min,   s_max 60–120 (24–47%).
+- CO2 80W:    speed 600–1200 mm/min,  s_max 50–100 (20–40%).
+- Fiber 20W:  speed 1000–3000 mm/min, s_max 60–120 (24–47%).
+- Fiber 50W:  speed 2000–5000 mm/min, s_max 40–80  (16–30%).
+Material modifiers (adjust from base values above):
+- Balsa/thin wood: reduce speed 20% or reduce power 10%
+- Plywood birch/poplar: use base values
+- Hardwood oak/maple/walnut: increase power 15% or reduce speed 20%
+- MDF: increase power 10%, watch for fumes
+- Leather: reduce power 20%, increase speed 20%
+- Anodized aluminum: use upper end of power range
+- Slate/stone: use upper end of power range, slow speed
+- s_min: always 0 for M4 Dynamic mode. For M3 Constant use 0.
+- s_max: always 255 unless user's $30 GRBL setting is known to be different.
+
 Use this exact JSON structure, replace values only:
-{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1,"width_mm":100,"height_mm":100},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
+{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
@@ -1864,8 +1877,6 @@ function renderResults(r) {
 
       <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Image Size and Position</div>
       <div class="settings-grid" style="margin-bottom:16px;">
-        ${settingRow('Width', s2.width_mm, 'mm')}
-        ${settingRow('Height', s2.height_mm, 'mm')}
         ${settingRow('Passes', s2.passes, '')}
       </div>
 
@@ -1953,8 +1964,6 @@ function exportGCode() {
     `; S-MIN:               ${sMin}`,
     `; S-MAX:               ${sMax}`,
     `; Passes:              ${s2.passes}`,
-    `; Width:               ${s2.width_mm} mm`,
-    `; Height:              ${s2.height_mm} mm`,
     '',
     `$30=${sMax}`,
     'G21', 'G90',
@@ -2029,8 +2038,6 @@ function exportTextSummary() {
     `  S-MAX                 : ${s2.s_max || '—'}`,
     '',
     '  [ Image Size and Position ]',
-    `  Width                 : ${s2.width_mm || '—'} mm`,
-    `  Height                : ${s2.height_mm || '—'} mm`,
     `  Passes                : ${s2.passes || '—'}`,
     '',
     line, '  ANALYSIS', line,
