@@ -4,7 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.12 — Bug fixes: async on triggerKeyValidation; webp added to file accept attribute
+<!-- v2.16 — Power unclamped: AI recommends freely 0-255; client-side warning injected if s_max >89%
+     v2.15 — Fix s_max contradiction: removed "always 255" rule that conflicted with power guidance table
+     v2.14 — Add BETA label to title
+     v2.13 — Fix rule numbering (5b→5, cascade to 11); fix JSON template defaults (s_max 255→200, dither_algorithm example added)
+     v2.12 — Power/speed reference table added to prompt; output size field removed
+     v2.11 — Fix doubled async async on validateKey crashing entire script; webp support added
      v2.10 — Bug fixes: async keyword on validateKey; autoSaveKey uses provider-specific key; render cleanup
      v2.9 — Correct dither algorithm names from actual LaserGRBL dropdown: Burks/Jarvis/Sierra2/Sierra3/SierraLight/Random
      v2.8 — Dithering algorithm selection: 8 algorithms with laser-specific guidance added to schema, render, exports
@@ -789,7 +794,7 @@
   <header>
     <div class="logo-icon">⚡</div>
     <div>
-      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.12</span></h1>
+      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:28px;font-weight:900;letter-spacing:2px;">BETA</span> <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.16</span></h1>
       <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
     </div>
   </header>
@@ -1510,26 +1515,25 @@ Your response rules — follow these exactly, no exceptions:
 2. All string values must be under 80 characters.
 3. Use only the exact field names specified in the user prompt.
 4. For "conversion_tool" use exactly one of: "Line To Line", "1bit BW Dithering", "Vectorize!"
-5b. When "conversion_tool" is "1bit BW Dithering", also set "dither_algorithm" to exactly one of:
-    "Atkinson" | "FloydSteinberg" | "Burks" | "Jarvis" | "Random" | "Sierra2" | "Sierra3" | "SierraLight" | "Stucki"
-    Use null for all other conversion tools.
-    Algorithm guide (use exact strings above):
-    - FloydSteinberg: Fast, reliable, slight worm artifacts on flat areas. Good general purpose default.
-    - Jarvis: Smoother than Floyd, distributes error wider over 3 rows. Best for detailed portraits on wood - gold standard for photos.
-    - Stucki: Similar to Jarvis, slightly sharper and a bit faster. Excellent for detailed photos and portraits.
-    - Burks: Faster version of Stucki (one row dropped). Good balance of speed and quality for most images.
-    - Sierra3: 3-row Sierra, smooth midtones, retains sharpness. Great for leather, stone, and slate.
-    - Sierra2: 2-row Sierra, faster than Sierra3, still smooth. Good all-rounder.
-    - SierraLight: Fastest error diffusion, minimal quality hit. Good for quick test burns and proofs.
-    - Atkinson: Only propagates 75pct of error - punchy midtones but blows out highlights/shadows.
-      Best for stylized engravings, high-contrast logos, artistic/retro look. Classic Mac algorithm.
-    - Random: Random threshold dithering. Creates noisy/grainy texture. Use for artistic effect only.
-5. For "laser_mode" use exactly one of: "M3 Constant", "M4 Dynamic"
-6. For "resize" use exactly one of: "High Quality Bicubic", "Nearest Neighbour"
-7. For "grayscale_conversion" use exactly one of: "SimpleAverage", "WeightAverage", "OpticalCorrect", "Custom"
-8. "brightness" is an integer 40-160, default 114 (below 114 = darker, above 114 = brighter). "contrast" is an integer 40-160, default 113 (below 113 = less contrast, above 113 = more contrast). "white_clip" is 0-100, default 0 (0 = disabled, higher clips more light pixels to white).
-9. "bw_threshold_value" is an integer 0-255, default 128. Only set for "Line To Line", "Vectorize!", or "Centerline". Set to null for "1bit BW Dithering" and "Pass Through".
-10. Never truncate the JSON. Always complete the full object.`;
+5. For "dither_algorithm": when conversion_tool is "1bit BW Dithering" set to exactly one of:
+   "Atkinson" | "FloydSteinberg" | "Burks" | "Jarvis" | "Random" | "Sierra2" | "Sierra3" | "SierraLight" | "Stucki"
+   Set to null for all other conversion tools.
+   Algorithm guide (use exact strings above):
+   - FloydSteinberg: Fast, reliable, slight worm artifacts on flat areas. Good general purpose default.
+   - Jarvis: Smoother than Floyd, distributes error wider over 3 rows. Best for detailed portraits on wood - gold standard for photos.
+   - Stucki: Similar to Jarvis, slightly sharper and a bit faster. Excellent for detailed photos and portraits.
+   - Burks: Faster version of Stucki (one row dropped). Good balance of speed and quality for most images.
+   - Sierra3: 3-row Sierra, smooth midtones, retains sharpness. Great for leather, stone, and slate.
+   - Sierra2: 2-row Sierra, faster than Sierra3, still smooth. Good all-rounder.
+   - SierraLight: Fastest error diffusion, minimal quality hit. Good for quick test burns and proofs.
+   - Atkinson: Only propagates 75% of error — punchy midtones but blows out highlights/shadows. Best for stylized engravings, high-contrast logos, artistic/retro look.
+   - Random: Random threshold dithering. Creates noisy/grainy texture. Use for artistic effect only.
+6. For "laser_mode" use exactly one of: "M3 Constant", "M4 Dynamic"
+7. For "resize" use exactly one of: "High Quality Bicubic", "Nearest Neighbour"
+8. For "grayscale_conversion" use exactly one of: "SimpleAverage", "WeightAverage", "OpticalCorrect", "Custom"
+9. "brightness" is an integer 40-160, default 114 (below 114 = darker, above 114 = brighter). "contrast" is an integer 40-160, default 113 (below 113 = less contrast, above 113 = more contrast). "white_clip" is 0-100, default 0 (0 = disabled, higher clips more light pixels to white).
+10. "bw_threshold_value" is an integer 0-255, default 128. Only set for "Line To Line", "Vectorize!", or "Centerline". Set to null for "1bit BW Dithering" and "Pass Through".
+11. Never truncate the JSON. Always complete the full object.`;
 
 // Separate lighter persona for suitability scoring — no field-name rules,
 // just honest critical assessment of how well an image will engrave
@@ -1789,30 +1793,27 @@ Field guidance:
 - bw_threshold_value: integer 0-255, default 128. Set when conversion_tool is "Line To Line", "Vectorize!", or "Centerline" — these show a BW Threshold checkbox+slider in LaserGRBL. Set to null when conversion_tool is "1bit BW Dithering" or "Pass Through" — those handle thresholding internally.
 - lines_per_mm: typical range 5-20. Higher = finer but slower.
 
-Speed and power guidance by laser type (engraving, not cutting):
-- Diode 5W:   speed 800–1500 mm/min, s_max 180–220 (70–85%). Lower speed or higher power for dark woods/MDF.
-- Diode 10W:  speed 1500–3000 mm/min, s_max 140–180 (55–70%).
-- Diode 20W:  speed 3000–6000 mm/min, s_max 100–150 (40–60%).
-- Diode 40W:  speed 5000–8000 mm/min, s_max 80–120 (30–47%).
-- CO2 30W:    speed 200–400 mm/min,   s_max 100–160 (40–63%).
-- CO2 40W:    speed 300–600 mm/min,   s_max 80–140 (30–55%).
-- CO2 60W:    speed 400–800 mm/min,   s_max 60–120 (24–47%).
-- CO2 80W:    speed 600–1200 mm/min,  s_max 50–100 (20–40%).
-- Fiber 20W:  speed 1000–3000 mm/min, s_max 60–120 (24–47%).
-- Fiber 50W:  speed 2000–5000 mm/min, s_max 40–80  (16–30%).
-Material modifiers (adjust from base values above):
-- Balsa/thin wood: reduce speed 20% or reduce power 10%
-- Plywood birch/poplar: use base values
-- Hardwood oak/maple/walnut: increase power 15% or reduce speed 20%
-- MDF: increase power 10%, watch for fumes
-- Leather: reduce power 20%, increase speed 20%
-- Anodized aluminum: use upper end of power range
-- Slate/stone: use upper end of power range, slow speed
-- s_min: always 0 for M4 Dynamic mode. For M3 Constant use 0.
-- s_max: always 255 unless user's $30 GRBL setting is known to be different.
+Speed guidance by laser type (engraving, not cutting):
+- Diode 5W:   speed 800–1500 mm/min
+- Diode 10W:  speed 1500–3000 mm/min
+- Diode 20W:  speed 3000–6000 mm/min
+- Diode 40W:  speed 5000–8000 mm/min
+- CO2 30W:    speed 200–400 mm/min
+- CO2 40W:    speed 300–600 mm/min
+- CO2 60W:    speed 400–800 mm/min
+- CO2 80W:    speed 600–1200 mm/min
+- Fiber 20W:  speed 1000–3000 mm/min
+- Fiber 50W:  speed 2000–5000 mm/min
+Material speed modifiers:
+- Balsa/thin wood: reduce speed 20%
+- Hardwood oak/maple/walnut: reduce speed 20%
+- Leather: increase speed 20%
+- Slate/stone: slow speed end of range
+- s_min: always 0.
+- s_max: recommend whatever power (0–255) the image, material, and laser require. No upper limit. Base s_max on 255 scale.
 
 Use this exact JSON structure, replace values only:
-{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":128,"conversion_tool":"Line To Line","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1500,"laser_mode":"M4 Dynamic","s_min":0,"s_max":255,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
+{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":null,"conversion_tool":"1bit BW Dithering","dither_algorithm":"FloydSteinberg","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1000,"laser_mode":"M4 Dynamic","s_min":0,"s_max":200,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
@@ -1890,6 +1891,16 @@ function renderResults(r) {
       <h3>Analysis</h3>
       <p>${r.analysis}</p>
     </div>` : '';
+
+  // Inject high-power warning if s_max > 89% of 255 (i.e. > ~227)
+  const powerPct = Math.round(((r.screen2?.s_max || 0) / 255) * 100);
+  if (powerPct > 89) {
+    r.warnings = r.warnings || [];
+    const alreadyHasPowerWarn = r.warnings.some(w => w.toLowerCase().includes('power'));
+    if (!alreadyHasPowerWarn) {
+      r.warnings.push(`High power warning: ${powerPct}% power (S${r.screen2.s_max}/255) recommended. Always test on scrap first — risk of scorching, fire, or damage at this level.`);
+    }
+  }
 
   let detailed = '';
   if (r.tips?.length) {
