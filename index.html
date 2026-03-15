@@ -4,7 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LaserGRBL Settings Advisor</title>
-<!-- v2.18 — s_max scale changed from 255 to 1000 throughout prompt, template, and power warning
+<!-- v2.39 — Fix zero-anchored JSON template: all numeric fields (brightness, contrast, white_clip, lines_per_mm, speed, s_min, s_max, passes) replaced with explicit reasoned placeholders; detected_operation corrected to use exact LaserGRBL tool names instead of job descriptions; placeholder instruction added forbidding AI from copying angle-bracket text verbatim
+     v2.38 — B&W checkbox defaults to checked when Vectorize! or Centerline selected
+     v2.30 — Google/Gemini tab first with ⭐ star; recommended banner with why-Gemini explanation in panel
+     v2.29 — Candidacy level definitions added to prompt; candidacy_reason now precedes candidacy label in JSON schema
+     v2.28 — System persona: 3-step reasoning chain (material knowledge, settings audit, ownership check); candidacy prompt requires material risk reasoning
+     v2.27 — Image quality score (not suitability); job candidacy renamed and scoped to image+material+laser only; explanatory subtitles on both
+     v2.26 — Experience level selector (Beginner/Intermediate/Expert) with prompt context; quality score beam animation; dangerous material callout in system persona
+     v2.25 — Expert-first quality scoring (removed anchored ranges); candidacy field added to main analysis; candidacy banner in results
+     v2.24 — Prompt rebuilt as expert-first: removed all guidance/ranges/anchors, AI reasons from expertise not guard rails
+     v2.23 — Balsa and sensitive material safety: hard power/speed overrides, specific numbers replace vague guidance
+     v2.22 — Upload zone fully clickable: file input z-index above content, overflow hidden, inner elements pointer-events none
+     v2.21 — Prompt fully tightened: per-laser speed/power only, per-material note only, operation-specific guidance, dynamic JSON template anchor
+     v2.20 — Air Assist checkbox added; included in outbound AI prompt
+     v2.19 — Robust JSON parser handles truncation/recovery; max_tokens bumped to 4000 all providers
+     v2.18 — s_max scale changed from 255 to 1000 throughout prompt, template, and power warning
      v2.17 — Fix AI anchoring to low s_max: template updated to 210, per-laser starting points added
      v2.16 — Power unclamped: AI recommends freely 0-255; client-side warning injected if s_max >89%
      v2.15 — Fix s_max contradiction: removed "always 255" rule that conflicted with power guidance table
@@ -228,6 +242,7 @@
     transition: all 0.2s;
     position: relative;
     background: rgba(255,107,26,0.02);
+    overflow: hidden;
   }
 
   .upload-zone:hover, .upload-zone.drag-over {
@@ -242,6 +257,15 @@
     cursor: pointer;
     width: 100%;
     height: 100%;
+    z-index: 2;
+  }
+
+  .upload-zone .upload-icon,
+  .upload-zone p,
+  .upload-zone .filename {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
   }
 
   .upload-icon {
@@ -796,7 +820,7 @@
   <header>
     <div class="logo-icon">⚡</div>
     <div>
-      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:28px;font-weight:900;letter-spacing:2px;">BETA</span> <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.18</span></h1>
+      <h1>Laser<span>GRBL</span> Advisor <span style="font-size:28px;font-weight:900;letter-spacing:2px;">BETA</span> <span style="font-size:13px;font-weight:400;color:var(--muted);letter-spacing:1px;">v2.39</span></h1>
       <p>AI-POWERED SETTINGS ANALYSIS // UPLOAD → CONFIGURE → BURN</p>
     </div>
   </header>
@@ -830,7 +854,7 @@
         <label>AI Provider</label>
         <div style="display:flex; gap:0; border-bottom:1px solid var(--border);">
           <button type="button" class="provider-tab active" id="tab-google" onclick="switchProvider('google')">
-            <span class="ptab-dot" style="background:#4285f4;"></span> Google
+            <span class="ptab-dot" style="background:#4285f4;"></span> Google ⭐
           </button>
           <button type="button" class="provider-tab" id="tab-openai" onclick="switchProvider('openai')">
             <span class="ptab-dot" style="background:#74aa9c;"></span> OpenAI
@@ -841,8 +865,11 @@
         </div>
 
         <div class="provider-panel" id="panel-google">
+          <div style="background:rgba(66,133,244,0.06);border:1px solid rgba(66,133,244,0.2);padding:8px 12px;margin-bottom:10px;font-family:var(--mono);font-size:10px;letter-spacing:1px;color:#4285f4;">
+            ⭐ RECOMMENDED — Tested against Claude and GPT-4o across multiple material/laser combinations. Gemini 2.5 Flash produced the most safety-conscious power settings and best material reasoning in our testing. Lowest cost per analysis.
+          </div>
           <div class="provider-info">
-            <strong>Gemini 2.5 Flash</strong> — Best multimodal model, ~$0.002/analysis
+            <strong>Gemini 2.5 Flash</strong> — ~$0.002/analysis
             <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key →</a>
           </div>
           <div class="key-row">
@@ -905,8 +932,11 @@
       <div class="form-group full" id="procPanel" style="display:none;">
         <div class="panel-title">Image Analysis</div>
         <div class="confidence-bar-wrap" id="confidenceWrap" style="display:none;">
+          <div class="laser-beam" id="qualityBeam" style="display:none;margin-bottom:10px;"></div>
           <div class="confidence-header">
-            <div class="confidence-title">◈ Engrave Suitability Score</div>
+            <div class="confidence-title">◈ Image Quality Score
+              <span style="font-family:var(--sans);font-size:10px;color:var(--muted);letter-spacing:0;font-weight:400;margin-left:8px;text-transform:none;">— is this image technically good enough to engrave? (material &amp; laser not considered yet)</span>
+            </div>
             <div class="confidence-score" id="confScore">—</div>
           </div>
           <div class="confidence-track">
@@ -985,16 +1015,55 @@
         </select>
       </div>
 
-      <!-- Operation Type -->
+      <!-- Conversion Tool -->
       <div class="form-group">
-        <label>Operation Type</label>
-        <select id="operationType">
-          <option value="engrave_photo">Photo Engraving (grayscale/dither)</option>
-          <option value="engrave_vector">Vector / Line Engraving</option>
-          <option value="engrave_fill">Fill / Solid Area Engraving</option>
-          <option value="cut">Cutting</option>
-          <option value="mark_metal">Metal Marking</option>
+        <label>Conversion Tool</label>
+        <select id="operationType" onchange="handleToolChange()">
+          <option value="auto">✦ Auto-Detect (AI determines from image)</option>
+          <option value="Line To Line Tracing">Line To Line Tracing</option>
+          <option value="1bit BW Dithering">1bit BW Dithering</option>
+          <option value="Vectorize!">Vectorize!</option>
+          <option value="Centerline">Centerline</option>
+          <option value="Passthrough">Passthrough</option>
         </select>
+        <!-- B&W checkbox — only for Vectorize! and Centerline -->
+        <div id="bwCheckWrap" style="display:none;margin-top:10px;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:13px;color:var(--text);line-height:1.5;">
+            <input type="checkbox" id="bwConvert" style="accent-color:var(--accent);width:15px;height:15px;flex-shrink:0;">
+            <span>
+              <strong style="font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;">B&amp;W</strong>
+              <span style="color:var(--muted);font-size:12px;margin-left:6px;">Pre-convert image to pure black &amp; white before processing. Recommended for clean line art and logos.</span>
+            </span>
+          </label>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:13px;color:var(--text);line-height:1.5;">
+            <input type="checkbox" id="airAssist" style="accent-color:var(--accent);width:15px;height:15px;margin-top:2px;flex-shrink:0;">
+            <span>
+              <strong style="font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;">Air Assist</strong><br>
+              <span style="color:var(--muted);font-size:12px;">Directs a jet of air at the focal point to clear smoke, cool the material, and reduce charring. Improves cut quality and reduces fire risk — especially useful for cutting and deep engraving.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Experience Level -->
+      <div class="form-group full">
+        <label>Operator Experience Level</label>
+        <div style="display:flex; gap:0; border-bottom:1px solid var(--border);">
+          <button type="button" class="provider-tab active" id="exp-beginner" onclick="setExperience('beginner')">
+            🟢 Beginner
+          </button>
+          <button type="button" class="provider-tab" id="exp-intermediate" onclick="setExperience('intermediate')">
+            🟡 Intermediate
+          </button>
+          <button type="button" class="provider-tab" id="exp-expert" onclick="setExperience('expert')">
+            🔴 Expert
+          </button>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-top:none;letter-spacing:1px;" id="expDesc">
+          Settings will prioritise safety and conservative values. Assumes no prior experience.
+        </div>
       </div>
 
       <!-- Extra Notes -->
@@ -1032,6 +1101,8 @@
         <div class="results-title">⚙ Recommended Settings</div>
         <div class="badge badge-ok" id="confidenceBadge">HIGH CONFIDENCE</div>
       </div>
+      <div id="candidacyBanner" style="display:none;border-left:3px solid var(--muted);padding:12px 16px;margin-bottom:16px;line-height:1.6;"></div>
+      <div id="operationBanner" style="display:none;border-left:3px solid var(--muted);padding:12px 16px;margin-bottom:16px;line-height:1.6;"></div>
       <div class="settings-grid" id="settingsGrid"></div>
       <div class="lasergrbl-tip" id="lasergrblTip">
         <strong>⟶ Where to set these in LaserGRBL</strong>
@@ -1186,6 +1257,15 @@
 let _fbOpen = false, _fbRating = 0;
 const RATING_LABELS = ['','TERRIBLE','NEEDS WORK','DECENT','PRETTY GOOD','LOVE IT'];
 
+function handleToolChange() {
+  const tool = document.getElementById('operationType').value;
+  const bwWrap = document.getElementById('bwCheckWrap');
+  const bwCheck = document.getElementById('bwConvert');
+  const show = tool === 'Vectorize!' || tool === 'Centerline';
+  if (bwWrap) bwWrap.style.display = show ? 'block' : 'none';
+  if (bwCheck && show) bwCheck.checked = true;
+}
+
 function toggleFeedback() {
   _fbOpen = !_fbOpen;
   document.getElementById('fbPanel').classList.toggle('open', _fbOpen);
@@ -1233,6 +1313,22 @@ async function submitFeedback(e) {
     btn.disabled = false; btn.textContent = '➡ SEND FEEDBACK';
     alert('Could not send: ' + err.message + '\n\nMake sure the site is deployed on Netlify.');
   }
+}
+
+// ── Experience level ──────────────────────────────────────────────────────────
+let _experienceLevel = 'beginner';
+const EXP_DESC = {
+  beginner:     'Settings will prioritise safety and conservative values. Assumes no prior experience.',
+  intermediate: 'Balanced settings. Assumes user will do a test burn before committing.',
+  expert:       'Optimised for best quality. Assumes experienced operator who will sanity-check values.'
+};
+
+function setExperience(level) {
+  _experienceLevel = level;
+  ['beginner','intermediate','expert'].forEach(l => {
+    document.getElementById('exp-' + l).classList.toggle('active', l === level);
+  });
+  document.getElementById('expDesc').textContent = EXP_DESC[level];
 }
 
 // ── Provider management ───────────────────────────────────────────────────────
@@ -1457,6 +1553,8 @@ function resetAnalysis() {
   document.getElementById('settingsGrid').innerHTML      = '';
   document.getElementById('imageAnalysisContent').innerHTML = '';
   document.getElementById('detailedContent').innerHTML   = '';
+  const _opBanner = document.getElementById('operationBanner');
+  if (_opBanner) _opBanner.style.display = 'none';
   _lastResult = null;
 }
 
@@ -1502,51 +1600,27 @@ async function callActiveProvider(key, prompt, systemPrompt) {
 }
 
 // ── Persona / system prompt ───────────────────────────────────────────────────
-const SYSTEM_PERSONA = `You are LaserGRBL Advisor, an expert laser engraving technician with 10+ years of hands-on experience operating diode, CO2, and fiber lasers using LaserGRBL software on Windows.
+const SYSTEM_PERSONA = `You are an expert laser engraver and LaserGRBL power user with years of hands-on experience across diode, CO2, and fiber lasers on all common materials. You have deep knowledge of how image characteristics — contrast, complexity, resolution, fine detail — affect real-world engraving results.
 
-Your deep expertise covers:
-- All LaserGRBL import settings across both dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2)
-- Material behavior under laser: wood, acrylic, leather, metal, slate, glass, cardboard, fabric
-- GRBL firmware configuration ($30 S-max, $32 laser mode, feed rates)
-- When to use Line To Line vs 1bit BW Dithering vs Vectorize! conversion tools
-- M3 Constant vs M4 Dynamic laser mode tradeoffs
-- How image characteristics (contrast, resolution, complexity, fine detail) affect engraving quality
+Before producing any settings, you reason through the job in three steps — internally, before writing a single number:
 
-Your response rules — follow these exactly, no exceptions:
-1. Output ONLY a raw JSON object. Zero markdown. Zero backticks. Zero prose before or after.
-2. All string values must be under 80 characters.
-3. Use only the exact field names specified in the user prompt.
-4. For "conversion_tool" use exactly one of: "Line To Line", "1bit BW Dithering", "Vectorize!"
-5. For "dither_algorithm": when conversion_tool is "1bit BW Dithering" set to exactly one of:
-   "Atkinson" | "FloydSteinberg" | "Burks" | "Jarvis" | "Random" | "Sierra2" | "Sierra3" | "SierraLight" | "Stucki"
-   Set to null for all other conversion tools.
-   Algorithm guide (use exact strings above):
-   - FloydSteinberg: Fast, reliable, slight worm artifacts on flat areas. Good general purpose default.
-   - Jarvis: Smoother than Floyd, distributes error wider over 3 rows. Best for detailed portraits on wood - gold standard for photos.
-   - Stucki: Similar to Jarvis, slightly sharper and a bit faster. Excellent for detailed photos and portraits.
-   - Burks: Faster version of Stucki (one row dropped). Good balance of speed and quality for most images.
-   - Sierra3: 3-row Sierra, smooth midtones, retains sharpness. Great for leather, stone, and slate.
-   - Sierra2: 2-row Sierra, faster than Sierra3, still smooth. Good all-rounder.
-   - SierraLight: Fastest error diffusion, minimal quality hit. Good for quick test burns and proofs.
-   - Atkinson: Only propagates 75% of error — punchy midtones but blows out highlights/shadows. Best for stylized engravings, high-contrast logos, artistic/retro look.
-   - Random: Random threshold dithering. Creates noisy/grainy texture. Use for artistic effect only.
-6. For "laser_mode" use exactly one of: "M3 Constant", "M4 Dynamic"
-7. For "resize" use exactly one of: "High Quality Bicubic", "Nearest Neighbour"
-8. For "grayscale_conversion" use exactly one of: "SimpleAverage", "WeightAverage", "OpticalCorrect", "Custom"
-9. "brightness" is an integer 40-160, default 114 (below 114 = darker, above 114 = brighter). "contrast" is an integer 40-160, default 113 (below 113 = less contrast, above 113 = more contrast). "white_clip" is 0-100, default 0 (0 = disabled, higher clips more light pixels to white).
-10. "bw_threshold_value" is an integer 0-255, default 128. Only set for "Line To Line", "Vectorize!", or "Centerline". Set to null for "1bit BW Dithering" and "Pass Through".
-11. Never truncate the JSON. Always complete the full object.`;
+STEP 1 — MATERIAL REASONING: Draw on everything you know about this material from experience. What is its density? How does it respond to heat? At what power level does it char, scorch, or ignite? What speed range does it tolerate? What are the failure modes? You know these materials the way any experienced engraver does — reason from that knowledge, not from guesswork.
+
+STEP 2 — SETTINGS AUDIT: Before committing to your numbers, check them against reality. Is this speed physically achievable on a machine in this class without vibration or positioning error? Is this power level safe for this material given what you just reasoned in Step 1? Does the candidacy honestly reflect the material risk — not just the image quality? If a beginner followed these exact numbers, what is the most likely real-world outcome?
+
+STEP 3 — OWNERSHIP CHECK: Ask yourself — would I run these settings on my own laser, on this material, with this operator present? If the answer is no, or even hesitant, adjust the settings until the answer is yes. You are not just an advisor. These numbers will be used by a real person on real equipment.
+
+You always calibrate to the operator experience level stated in the job. A beginner will enter your numbers exactly as given — treat that responsibility seriously.
+
+You respond ONLY with a raw JSON object. No markdown. No backticks. No explanation before or after. Never truncate — always output the complete JSON object.`;
 
 // Separate lighter persona for suitability scoring — no field-name rules,
 // just honest critical assessment of how well an image will engrave
-const SYSTEM_PERSONA_QUALITY = `You are a brutally honest laser engraving quality assessor. Your only job is to evaluate how well an image will engrave on a laser engraver.
+const SYSTEM_PERSONA_QUALITY = `You are a digital image analyst assessing the technical quality of an image file. You are not considering any specific material, laser type, or job — only whether the image itself has the technical properties that make it worth attempting to engrave at all.
 
-Scoring rules:
-- Be critical and realistic. Most images score 40-70. Only exceptional images score above 80.
-- High contrast simple graphics: 75-90. Photos with good contrast: 55-75. Busy complex scenes: 30-55. Low res or noisy images: 10-40.
-- Heavy complexity, busy backgrounds, and many overlapping elements should significantly lower the score.
-- Output ONLY a raw JSON object. Zero markdown. Zero backticks. Zero prose.
-- Always complete the full JSON object. Never truncate.`;
+Assess honestly: resolution sufficiency, contrast clarity, tonal range, background cleanliness, and whether fine detail is legible. These are image quality factors only. A sharp high-contrast logo scores well. A blurry low-contrast photo scores poorly. What material or laser someone might use is completely irrelevant at this stage.
+
+Output ONLY a raw JSON object. Zero markdown. Zero backticks. Zero prose. Never truncate.`;
 
 async function callAnthropic(apiKey, prompt, systemPrompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1559,7 +1633,7 @@ async function callAnthropic(apiKey, prompt, systemPrompt) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: systemPrompt,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: uploadedFile.type, data: uploadedBase64 } },
@@ -1581,7 +1655,7 @@ async function callOpenAI(apiKey, prompt, systemPrompt) {
     },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 2000,
+      max_tokens: 4000,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: [
@@ -1608,7 +1682,7 @@ async function callGoogle(apiKey, prompt, systemPrompt) {
           { inline_data: { mime_type: uploadedFile.type, data: uploadedBase64 } },
           { text: prompt }
         ]}],
-        generationConfig: { maxOutputTokens: 2000 }
+        generationConfig: { maxOutputTokens: 4000 }
       })
     }
   );
@@ -1624,22 +1698,18 @@ async function analyzeImageQuality() {
 
   const wrap = document.getElementById('confidenceWrap');
   wrap.style.display = 'block';
+  document.getElementById('qualityBeam').style.display = 'block';
   document.getElementById('confScore').textContent = '...';
   document.getElementById('confNote').textContent  = 'Analyzing image quality...';
   document.getElementById('confFill').style.width  = '0%';
   document.getElementById('confFactors').innerHTML = '';
 
-  const prompt = `Analyze this image for laser engraving suitability. Output ONLY raw JSON, no markdown, no backticks.
+  const prompt = `Assess the technical quality of this image file. Do not consider material, laser type, or job — only evaluate the image itself as a digital asset.
 
-Rules:
-- "score" must be a whole integer 0-100. No decimals. No anchoring to round numbers — use precise values like 47, 63, 71, 82.
-- "note" is one short sentence under 60 chars. No apostrophes or special characters.
-- "rating" must be exactly one of: good, warn, bad
-- "detail" is under 40 chars. No apostrophes or special characters.
-- Most images score 40-70. Only truly exceptional images exceed 80. Be critical.
+Output ONLY a raw JSON object, no markdown, no backticks:
+{"score":0,"note":"one honest sentence about image technical quality","factors":[{"label":"Resolution","rating":"good|warn|bad","detail":"brief note"},{"label":"Contrast","rating":"good|warn|bad","detail":"brief note"},{"label":"Complexity","rating":"good|warn|bad","detail":"brief note"},{"label":"Fine Detail","rating":"good|warn|bad","detail":"brief note"},{"label":"Background","rating":"good|warn|bad","detail":"brief note"}]}
 
-Output this exact structure:
-{"score":0,"note":"","factors":[{"label":"Resolution","rating":"good","detail":""},{"label":"Contrast","rating":"good","detail":""},{"label":"Complexity","rating":"good","detail":""},{"label":"Fine Detail","rating":"good","detail":""},{"label":"Background","rating":"good","detail":""}]}`;
+score is an integer 0-100 reflecting image technical quality only — not laser suitability. note and detail must not contain apostrophes or special characters.`;
 
   try {
     const text    = await callActiveProvider(key, prompt, SYSTEM_PERSONA_QUALITY);
@@ -1662,6 +1732,7 @@ Output this exact structure:
     try { json = JSON.parse(cleaned); }
     catch { json = JSON.parse(raw); }
 
+    document.getElementById('qualityBeam').style.display = 'none';
     const score   = json.score != null ? Math.round(Number(json.score)) : null;  // round to int, ?? so 0 is valid
     const factors = json.factors || [];
     const note    = json.note || 'No summary provided.';
@@ -1689,17 +1760,69 @@ Output this exact structure:
     ).join('');
 
   } catch (err) {
+    document.getElementById('qualityBeam').style.display = 'none';
     document.getElementById('confScore').textContent = '— / 100';
     document.getElementById('confNote').textContent = 'Analysis error: ' + err.message;
   }
 }
 
 // ── Main analysis ─────────────────────────────────────────────────────────────
+// ── Robust JSON parser — handles truncation, trailing commas, smart quotes ────
+function robustParseJSON(text) {
+  // Strip markdown fences
+  text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
+  // Fix smart quotes
+  text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+
+  const first = text.indexOf('{');
+  if (first === -1) return null;
+  text = text.slice(first);
+
+  // Try 1: parse as-is
+  try { return JSON.parse(text); } catch(_) {}
+
+  // Try 2: strip trailing commas
+  const cleaned = text.replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(cleaned); } catch(_) {}
+
+  // Try 3: find last valid closing brace by walking backwards
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] === '}') {
+      try { return JSON.parse(text.slice(0, i + 1).replace(/,\s*([}\]])/g, '$1')); } catch(_) {}
+    }
+  }
+
+  // Try 4: truncation recovery — close any open arrays/objects
+  let fixed = cleaned;
+  const opens = [];
+  let inStr = false, escape = false;
+  for (const ch of fixed) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"' && !escape) { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') opens.push('}');
+    else if (ch === '[') opens.push(']');
+    else if (ch === '}' || ch === ']') opens.pop();
+  }
+  if (inStr) fixed += '"';
+  fixed += opens.reverse().join('');
+  try { return JSON.parse(fixed.replace(/,\s*([}\]])/g, '$1')); } catch(_) {}
+
+  return null;
+}
+
 async function runAnalysis() {
   const laserType  = document.getElementById('laserType').value;
   const material   = document.getElementById('material').value;
   const operation  = document.getElementById('operationType').value;
+  const bwConvert  = ['Vectorize!','Centerline'].includes(operation)
+    ? document.getElementById('bwConvert').checked
+    : null;
   const extraNotes = document.getElementById('extraNotes').value;
+  const airAssist  = document.getElementById('airAssist').checked;
+  const experience = _experienceLevel;
   const apiKey     = getActiveKey();
 
   if (!uploadedBase64) { alert('Please upload an image first.'); return; }
@@ -1714,22 +1837,12 @@ async function runAnalysis() {
   document.getElementById('resultsBlock').style.display  = 'none';
   document.getElementById('errorBlock').style.display    = 'none';
 
-  const prompt = buildPrompt(laserType, material, operation, extraNotes);
+  const prompt = buildPrompt(laserType, material, operation, extraNotes, airAssist, experience, bwConvert);
 
   try {
     const text  = await callActiveProvider(apiKey, prompt);
-    // Extract JSON by finding first { and last } — immune to any markdown wrapping
-    const firstBrace = text.indexOf('{');
-    const lastBrace  = text.lastIndexOf('}');
-    if (firstBrace === -1 || lastBrace === -1) throw new Error('Could not parse AI response. Raw: ' + text.slice(0, 300));
-    const jsonMatch = [text.slice(firstBrace, lastBrace + 1)];
-    const sanitized = jsonMatch[0]
-      .replace(/,\s*([}\]])/g, '$1')
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/[\u201C\u201D]/g, '"');
-    let result;
-    try { result = JSON.parse(sanitized); }
-    catch { result = JSON.parse(jsonMatch[0]); }
+    const result = robustParseJSON(text);
+    if (!result) throw new Error('Could not parse AI response. Raw response:\n' + text.slice(0, 400));
     renderResults(result);
   } catch (err) {
     document.getElementById('errorBlock').style.display = 'block';
@@ -1741,19 +1854,21 @@ async function runAnalysis() {
 }
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
-function buildPrompt(laserType, material, operation, extraNotes) {
+function buildPrompt(laserType, material, operation, extraNotes, airAssist, experience, bwConvert) {
+
   const laserNames = {
-    diode_5w:  'Diode laser ~5W optical (e.g. Sculpfun S9, NEJE A40630)',
-    diode_10w: 'Diode laser ~10W optical (e.g. Sculpfun S10, xTool D1 Pro 10W)',
-    diode_20w: 'Diode laser ~20W optical (e.g. Sculpfun S30 Pro, NEJE 4 Max)',
-    diode_40w: 'Diode laser ~40W optical (high-end diode, e.g. Sculpfun S30 Ultra)',
-    co2_30w:   'CO2 laser 30W (K40-style)',
-    co2_40w:   'CO2 laser 40W (K40, OMTech 40W)',
-    co2_60w:   'CO2 laser 60W',
-    co2_80w:   'CO2 laser 80W',
-    fiber_20w: 'Fiber laser 20W (MOPA/pulse)',
-    fiber_50w: 'Fiber laser 50W',
+    diode_5w:  'Diode laser ~5W optical (e.g. Sculpfun S9, NEJE A40630) — realistic engraving speed 800–2000 mm/min, mechanical accuracy degrades above 2000',
+    diode_10w: 'Diode laser ~10W optical (e.g. Sculpfun S10, xTool D1 Pro 10W) — realistic engraving speed 1000–3000 mm/min',
+    diode_20w: 'Diode laser ~20W optical (e.g. Sculpfun S30 Pro, NEJE 4 Max) — realistic engraving speed 1500–4000 mm/min',
+    diode_40w: 'Diode laser ~40W optical (e.g. Sculpfun S30 Ultra) — realistic engraving speed 2000–6000 mm/min',
+    co2_30w:   'CO2 laser 30W (K40-style) — realistic engraving speed 100–400 mm/min',
+    co2_40w:   'CO2 laser 40W — realistic engraving speed 100–500 mm/min',
+    co2_60w:   'CO2 laser 60W — realistic engraving speed 200–600 mm/min',
+    co2_80w:   'CO2 laser 80W — realistic engraving speed 200–800 mm/min',
+    fiber_20w: 'Fiber laser 20W (MOPA/pulse) — realistic marking speed 500–2000 mm/min',
+    fiber_50w: 'Fiber laser 50W — realistic marking speed 1000–4000 mm/min',
   };
+
   const materialNames = {
     wood_balsa:      'Balsa / thin craft wood',
     wood_plywood:    'Plywood (birch, poplar)',
@@ -1770,57 +1885,109 @@ function buildPrompt(laserType, material, operation, extraNotes) {
     cardboard:       'Cardboard / Chipboard',
     fabric:          'Fabric / Denim',
   };
+
   const opNames = {
-    engrave_photo:  'photo engraving (greyscale/dithered image)',
-    engrave_vector: 'vector / line engraving',
-    engrave_fill:   'raster fill engraving',
-    cut:            'through-cutting',
-    mark_metal:     'metal surface marking',
+    'auto':                 'AUTO-DETECT — examine the image and determine the most appropriate conversion tool yourself. Output the exact tool name as detected_operation.',
+    'Line To Line Tracing': 'Line To Line Tracing',
+    '1bit BW Dithering':    '1bit BW Dithering',
+    'Vectorize!':           'Vectorize!',
+    'Centerline':           'Centerline',
+    'Passthrough':          'Passthrough',
   };
 
-  return `Analyze the uploaded image and provide LaserGRBL settings for this job.
+  return `You are an expert laser engraver with years of hands-on experience using LaserGRBL software. Analyze this image and provide the optimal settings for the following job.
 
-SETUP:
+JOB:
 - Laser: ${laserNames[laserType] || laserType}
 - Material: ${materialNames[material] || material}
-- Operation: ${opNames[operation] || operation}
-- Notes: ${extraNotes || 'none'}
+- Conversion Tool: ${operation === 'auto'
+    ? 'AUTO-DETECT — examine the image and determine the most appropriate conversion tool. Output the exact tool name (one of: "Line To Line Tracing", "1bit BW Dithering", "Vectorize!", "Centerline", "Passthrough") as "detected_operation" in the JSON.'
+    : `USER-SELECTED: "${opNames[operation] || operation}" — the user has explicitly chosen this conversion tool. Generate ALL settings optimised for this tool exactly as specified, even if you would personally choose differently. If you believe a different tool would produce better results, note it in "operation_note" but do not let it change your settings.`
+  }
+- Air Assist: ${airAssist ? 'YES' : 'NO'}
+- B&W Pre-conversion: ${bwConvert === null ? 'N/A (not applicable for this tool)' : bwConvert ? 'YES — image will be pre-converted to pure black and white before processing' : 'NO — process image in grayscale'}
+- Operator experience: ${experience === 'beginner' ? 'BEGINNER — These settings will be used by someone new to laser engraving. They will enter your numbers exactly as given without sanity-checking them. Err heavily on the side of safety. Conservative power, safe speeds, protective warnings. A faint result is far better than a fire or ruined material.' : experience === 'intermediate' ? 'INTERMEDIATE — User has some experience and will do a test burn before committing. Balanced settings are appropriate. Flag risks clearly.' : 'EXPERT — Experienced operator who will sanity-check your values and adjust as needed. Optimise for best quality result.'}${extraNotes ? '\n- Notes: ' + extraNotes : ''}
 
-Recommend exact LaserGRBL settings matching the two import dialogs: "Import Raster Image" (Screen 1) and "Target Image Size and Options" (Screen 2).
+LaserGRBL uses two import dialogs. Provide settings for both.
 
-Field guidance:
-- brightness: integer 40-160, default 114. Below 114 = darker, above 114 = brighter. For low-contrast photos push to 130-145. For overexposed images drop to 90-105.
-- contrast: integer 40-160, default 113. Below 113 = softer, above 113 = more contrast. For low-contrast photos push to 135-155. For already harsh images drop to 95-110.
-- white_clip: integer 0-100, default 0 (disabled). Higher values clip light pixels to white (shown pink in preview). Use 40-70 for washed-out or low-contrast photos. Leave at 0 for clean high-contrast images.
-- bw_threshold_value: integer 0-255, default 128. Set when conversion_tool is "Line To Line", "Vectorize!", or "Centerline" — these show a BW Threshold checkbox+slider in LaserGRBL. Set to null when conversion_tool is "1bit BW Dithering" or "Pass Through" — those handle thresholding internally.
-- lines_per_mm: typical range 5-20. Higher = finer but slower.
+Screen 1 — Import Raster Image field reference:
 
-Speed guidance by laser type (engraving, not cutting):
-- Diode 5W:   speed 800–1500 mm/min
-- Diode 10W:  speed 1500–3000 mm/min
-- Diode 20W:  speed 3000–6000 mm/min
-- Diode 40W:  speed 5000–8000 mm/min
-- CO2 30W:    speed 200–400 mm/min
-- CO2 40W:    speed 300–600 mm/min
-- CO2 60W:    speed 400–800 mm/min
-- CO2 80W:    speed 600–1200 mm/min
-- Fiber 20W:  speed 1000–3000 mm/min
-- Fiber 50W:  speed 2000–5000 mm/min
-Material speed modifiers:
-- Balsa/thin wood: reduce speed 20%
-- Hardwood oak/maple/walnut: reduce speed 20%
-- Leather: increase speed 20%
-- Slate/stone: slow speed end of range
-- s_min: always 0.
-- s_max: recommend whatever power (0–1000) the image, material, and laser require. No upper limit. Base s_max on 1000 scale.
-  Typical starting points (adjust up or down based on image and material):
-  Diode 5W: 750–900  |  Diode 10W: 600–750  |  Diode 20W: 400–620  |  Diode 40W: 350–500
-  CO2 30W: 430–670   |  CO2 40W: 350–590    |  CO2 60W: 275–510    |  CO2 80W: 235–430
-  Fiber 20W: 275–510 |  Fiber 50W: 195–355
-  These are starting points only — go higher or lower if the job demands it.
+resize — how LaserGRBL resamples the image when scaling it to the target output size:
+  "High Quality Bicubic": weighted averaging of surrounding pixels; preserves smooth tonal gradients and soft edges; correct for photos and images with continuous tone
+  "Nearest Neighbour": snaps each pixel to the closest value with no blending; preserves hard edges and crisp pixel boundaries; correct for line art, logos, and images that are already sharp at native resolution
 
-Use this exact JSON structure, replace values only:
-{"confidence":"high","screen1":{"resize":"High Quality Bicubic","grayscale_conversion":"WeightAverage","brightness":114,"contrast":113,"white_clip":0,"bw_threshold_value":null,"conversion_tool":"1bit BW Dithering","dither_algorithm":"FloydSteinberg","lines_per_mm":10},"screen2":{"engraving_speed_mm_min":1000,"laser_mode":"M4 Dynamic","s_min":0,"s_max":800,"passes":1},"analysis":"Brief summary.","tips":["Tip one.","Tip two.","Tip three."],"warnings":[]}`
+grayscale_conversion — how colour channels are combined into a single luminance value before processing:
+  "SimpleAverage": averages R, G, B equally; tends to make yellows and greens appear brighter than the eye perceives them
+  "WeightAverage": fixed channel weighting; closer to human perception than SimpleAverage
+  "OpticalCorrect": weights channels to match human luminance perception (ITU-R BT.601/709); most perceptually accurate grayscale from colour images; generally the best choice for photos
+  "Custom": manual channel weighting; only useful when the source image has specific colour characteristics worth exploiting
+
+brightness (integer 40–160) — shifts the entire histogram up or down before conversion. Increasing brightness raises all pixel values toward white — on an already-bright image this clips highlight detail to pure white, meaning those areas will not fire the laser at all. Decreasing pushes values toward black, increasing overall burn area. An already high-contrast image with bright whites needs little or no adjustment; a flat or dark image may need lifting.
+
+contrast (integer 40–160) — expands or compresses the tonal range around the midpoint before conversion. Increasing contrast pushes dark pixels darker and bright pixels brighter simultaneously — on an already high-contrast image this clips both ends, destroying fine shadow and highlight detail simultaneously. For line art and technical drawings that already have strong tonal separation, little or no contrast increase is needed. For flat, washed-out, or low-contrast images, increasing contrast improves tonal separation before conversion. Set based on what the image actually needs, not a default.
+
+white_clip (integer 0–100, default 0) — clips a percentage of the brightest pixels to pure white before conversion, telling the laser to ignore those areas entirely. Useful when an image has a near-white background with slight grey noise — raising white_clip eliminates that noise so the background produces no laser firing. On images with important highlight detail or clean white backgrounds, white_clip should be 0.
+
+conversion_tool — the method used to convert the processed image into laser firing instructions. Choose based on image type and operation:
+  "Line To Line Tracing": scans the image row by row; in grayscale mode varies laser power continuously to reproduce tonal gradients — requires M4 Dynamic; in 1bit mode applies a hard bw_threshold converting the image to pure black/white, destroying all midtone information — uses M3 Constant; delivers sustained heat per line which increases charring risk on sensitive materials
+  "1bit BW Dithering": converts the image to a binary dot pattern using error-diffusion — fires laser at full s_max for each dot with no variable power; dot density encodes the apparent shade; best for photos on wood and leather where sustained variable power creates charring risk; requires a dither_algorithm selection; recommended at high lines_per_mm (8–10) for smooth results
+  "Vectorize!": traces image edges into vector outlines; only suitable for logos, clipart, and high-contrast line art with clean edges; completely unsuitable for photographs or images with tonal gradients; uses bw_threshold to determine which edges to trace
+  "Centerline": skeletonizes strokes to a single-path centerline rather than outlining both edges; best for text, handwriting, and thick line art where you want one burn path down the middle of each stroke rather than two parallel edge burns; uses bw_threshold
+  "Passthrough": sends image data to the laser without any conversion processing; for pre-processed or pre-dithered images only
+
+dither_algorithm — only when conversion_tool is "1bit BW Dithering", otherwise null. All algorithms use error diffusion: the difference between the desired tonal value and the binary fired/not-fired result is distributed to neighbouring pixels to preserve overall tonal accuracy:
+  "Atkinson": distributes only 75% of error; produces lighter, more open dot patterns; good for preserving highlight areas on lighter materials
+  "FloydSteinberg": distributes 100% of error to 4 neighbours; accurate tonal reproduction; industry standard general-purpose choice
+  "Stucki" / "Jarvis": distribute error across a wider set of neighbours; smoother gradients and finer dot patterns; better for detailed images at high resolution
+  "Sierra2" / "Sierra3" / "SierraLight": variants with different detail/speed tradeoffs; SierraLight is coarser and faster, Sierra3 is finer
+  "Burks": similar weighting to Stucki with slight variation
+  "Random": random dot placement; produces a noisy film-grain texture; occasionally useful for artistic effect, rarely for precise engraving
+
+bw_threshold_value (integer 0–255) — only for "Line To Line Tracing" 1bit mode, "Vectorize!", and "Centerline", otherwise null. Sets the cutoff: pixels lighter than this value become white (laser does not fire); pixels darker than this value become black (laser fires). A lower threshold fires the laser for fewer pixels — finer, lighter result. A higher threshold fires the laser for more pixels — heavier, darker result. For clean line art on white backgrounds, the correct value depends on line thickness and definition: too low drops thin lines entirely; too high bleeds lines together and fills gaps.
+
+direction ("Horizontal", "Vertical", or "Diagonal", only for "Line To Line Tracing", otherwise null) — the angle at which scan lines are burned across the image. Horizontal is the standard default and works well for most images. Vertical can improve results on images with strong horizontal detail. Diagonal at 45° can reduce the appearance of scan lines on wood grain and produce a more natural look on organic subjects.
+
+bw_conversion (boolean, only for Vectorize! and Centerline, otherwise null) — whether to pre-convert the image to pure black and white before the tool processes it. True produces cleaner edge tracing on high-contrast line art and logos. False allows the tool to work from grayscale values. Set based on the image content, not the user's checkbox — if the user has already indicated their preference via the B&W Pre-conversion input above, respect it.
+
+Vectorize! tool options (all null for any other tool):
+spot_removal (0–100) — removes isolated pixel clusters smaller than this size before vectorizing. Low values preserve fine detail including noise; high values clean up speckles and background artifacts. Set based on how clean the source image is.
+smoothing (0.0–100.0, 0.1 increments) — smooths the traced curves. Low values preserve sharp corners and fine detail; high values produce smoother, more flowing paths. For technical drawings use low values; for logos and organic shapes use moderate values.
+optimize (0.0–50.0, 0.1 increments) — simplifies the vector path by merging nearly-collinear segments. Low values preserve all path detail; high values reduce node count at the cost of accuracy. Higher values are appropriate for simple shapes; lower for complex detailed art.
+downsampling (0.0–10.0, 0.1 increments) — reduces image resolution before vectorizing. Higher values speed up processing and simplify output but lose fine detail. For high-resolution detailed images use low values; for simple images higher values are acceptable.
+adaptive_quality (boolean) — when true, LaserGRBL automatically adjusts tracing quality based on image complexity. Generally leave true unless you have a specific reason to disable it.
+optimize_travel (boolean) — when true, reorders the burn path to minimize laser head travel between segments, reducing job time. Almost always beneficial — recommend true.
+filling (string) — how enclosed vector shapes are filled with laser burns. "No Filling" traces outlines only. Line fills (Horizontal, Vertical, Diagonal, Diagonal Reversed) fill shapes with parallel lines at that angle. Grid and Diagonal Grid produce cross-hatch fills. Cross Fill and Diagonal Cross Fill are denser cross-hatch. Squares, Zig Zag, Hilbert, and Inset Filling are area-fill patterns — Hilbert being the most uniform. Avoid the "(old)" variants. Choose based on whether the image has filled areas that need burning, and how much heat the material can tolerate — denser fills deliver more heat.
+
+Centerline tool options (all null for any other tool):
+corner_threshold (0–360) — angle in degrees below which a junction is treated as a corner rather than a curve. Low values only treat very acute angles as corners; high values treat more junctions as corners, producing more distinct path segments with sharper direction changes. For text and geometric line art, higher values preserve sharp corners; for smooth curves and handwriting, lower values produce more natural paths.
+line_threshold (0–100) — minimum significance of a line segment for it to be included in the centerline output. Low values preserve fine detail and short strokes; high values discard minor segments and keep only the dominant strokes. For detailed line art use low values; for cleaning up noisy or sketchy input use higher values.
+
+lines_per_mm — how many horizontal scan lines are burned per millimetre of height; directly equivalent to vertical DPI (lines_per_mm × 25.4 = DPI). Higher values produce finer vertical detail but increase total job time and cumulative heat delivered to the material. Lower values are faster and cooler but lose fine vertical resolution. The practical upper limit is the laser's actual spot size — exceeding it produces overlapping lines with no additional detail benefit and increased charring risk. For 1bit BW Dithering, 8–10 lines/mm is recommended for smooth dot pattern reproduction.
+
+Screen 2 — Target Image Size and Options field reference:
+
+engraving_speed_mm_min — how fast the laser head moves during engraving. Faster speeds reduce heat delivered per unit area, reducing burn depth and charring risk but also reducing mark intensity. Slower speeds increase heat, deepening marks but risking overburn and charring on sensitive materials. The realistic mechanical limits per laser class must be respected — exceeding them causes missed steps, position errors, and degraded quality.
+
+laser_mode — how the laser power is controlled relative to head speed:
+  "M3 Constant": laser fires at a fixed commanded power regardless of head speed; power does not vary with acceleration or deceleration; correct for vector engraving, cutting, Centerline, and any operation requiring uniform burn depth; can cause corner burns on direction changes because the laser dwells at full power while the head decelerates
+  "M4 Dynamic": laser power scales proportionally with head speed; at lower speeds (corners, direction changes) power drops automatically to prevent overburning; required for grayscale Line To Line Tracing engraving where tonal variation is encoded as power variation; wrong choice for 1bit BW Dithering or Vectorize! where every dot must fire at exactly s_max
+
+s_min (0–1000, default 0) — the minimum laser power value when the laser is nominally on. Normally 0 — the laser either fires at the commanded power or is fully off. Raising s_min above 0 sets a power floor so the laser never fully extinguishes between dots or lines, which can help if the laser has a long ignition delay and misses the start of lines. For most engraving jobs s_min should remain 0.
+
+s_max (0–1000, where 1000 = 100% of laser rated power) — the maximum laser power ceiling for this entire job. Must match the GRBL firmware $30 setting or power percentages will be wrong. Material sensitivity is the primary driver: highly flammable or thin materials require a low s_max ceiling; dense or reflective materials need higher values to mark. This is not a fine-tuning knob — it sets the absolute power limit for the job.
+
+passes — how many times the laser traverses the full image. A single pass at correct settings is almost always preferable to multiple passes at reduced power — each additional pass re-heats already-burned material, increasing charring and edge spreading. Multiple passes are justified for cutting where full depth requires cumulative energy, and for very dense materials where a single pass cannot deposit enough energy without surface ignition risk.
+
+Candidacy levels — choose the one that honestly reflects the inherent outcome probability for this combination of image, material, and laser. Base this on the physical properties of the material, the complexity of the image, and the capability of the laser — not on the settings you have chosen. Assess the combination as if no settings have been decided yet. Operator experience is not a factor:
+
+  excellent — Inherently forgiving combination. Material tolerates a wide power range, image is clean and simple, laser is well-matched. Low risk of material damage even if settings are slightly off.
+  good — Manageable combination. Material has some sensitivity but is not dangerous. Image complexity is within what this laser can handle cleanly. Failure mode is a disappointing result, not material damage or safety risk.
+  fair — Challenging combination. Material is demanding, image is complex, or laser is underpowered for the job. Real risk of poor results on first attempt. Experienced operator or extensive test burns needed.
+  poor — Difficult combination with significant mismatch. Material is high-risk, image complexity exceeds what this laser can render safely, or material properties make a good result unlikely regardless of settings. High likelihood of material damage.
+  not_recommended — Inherently unsafe or unsuitable combination regardless of settings. Highly flammable material with a complex high-density image, laser type fundamentally incompatible with material, or the job cannot be executed safely without expert hands-on judgment.
+
+Before producing your JSON: reason through all three steps internally, then choose your candidacy level using the definitions above. Output ONLY the final JSON — no reasoning text, no explanation. Every field marked with angle brackets MUST be replaced with a real reasoned value — do not copy the placeholder text into your output:
+{"detected_operation":"only present when operation was AUTO-DETECT — exact tool name, one of: Line To Line Tracing|1bit BW Dithering|Vectorize!|Centerline|Passthrough","operation_note":"only present when user selected a specific operation and you would have chosen differently — one sentence explaining what you would have recommended and why. Omit this field entirely if you agree with the user selection or if operation was AUTO-DETECT","confidence":"high|medium|low","candidacy_reason":"one honest sentence about the inherent suitability of this image on this material with this laser — based on material properties and image complexity only, not the settings you chose","candidacy":"excellent|good|fair|poor|not_recommended","screen1":{"resize":"High Quality Bicubic|Nearest Neighbour","grayscale_conversion":"SimpleAverage|WeightAverage|OpticalCorrect|Custom","brightness":"<integer 40-160, reasoned from this image — do NOT default to 114>","contrast":"<integer 40-160, reasoned from this image — do NOT default to 113>","white_clip":"<integer 0-100, reasoned from this image — do NOT default to 0 unless background is genuinely clean>","bw_threshold_value":null,"conversion_tool":"Line To Line Tracing|1bit BW Dithering|Vectorize!|Centerline|Passthrough","direction":null,"bw_conversion":null,"dither_algorithm":null,"lines_per_mm":"<integer 1-20, reasoned from image detail and material>","spot_removal":null,"smoothing":null,"optimize":null,"downsampling":null,"adaptive_quality":null,"optimize_travel":null,"filling":null,"corner_threshold":null,"line_threshold":null},"screen2":{"engraving_speed_mm_min":"<integer, reasoned from laser class and material>","laser_mode":"M3 Constant|M4 Dynamic","s_min":"<integer 0-1000, almost always 0>","s_max":"<integer 0-1000, reasoned from material sensitivity>","passes":"<integer, almost always 1>"},"analysis":"...","tips":["..."],"warnings":[]}`;
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
@@ -1842,6 +2009,36 @@ function renderResults(r) {
   badge.textContent = (r.confidence || 'unknown').toUpperCase() + ' CONFIDENCE';
   badge.className = 'badge ' + (r.confidence === 'high' ? 'badge-ok' : r.confidence === 'medium' ? 'badge-warn' : 'badge-danger');
 
+  // Render candidacy assessment
+  const candidacyEl = document.getElementById('candidacyBanner');
+  if (candidacyEl && r.candidacy) {
+    const c = r.candidacy;
+    const colorMap = { excellent: 'var(--green)', good: 'var(--green)', fair: '#ffaa00', poor: 'var(--red)', not_recommended: 'var(--red)' };
+    const bgMap    = { excellent: 'rgba(57,255,110,0.07)', good: 'rgba(57,255,110,0.07)', fair: 'rgba(255,170,0,0.07)', poor: 'rgba(255,59,92,0.07)', not_recommended: 'rgba(255,59,92,0.07)' };
+    candidacyEl.style.display = 'block';
+    candidacyEl.style.borderColor = colorMap[c] || 'var(--muted)';
+    candidacyEl.style.background  = bgMap[c]    || 'transparent';
+    candidacyEl.innerHTML = `<span style="font-family:var(--mono);font-size:10px;letter-spacing:2px;color:${colorMap[c] || 'var(--muted)'};text-transform:uppercase;">◈ Job Candidacy: ${c.replace('_', ' ')}</span><span style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0;margin-left:10px;">— this image on this material with this laser</span><br><span style="font-size:13px;color:var(--text);line-height:1.6;display:block;margin-top:4px;">${r.candidacy_reason || ''}</span>`;
+  }
+
+  // Render detected operation (auto-detect mode) or operation override note
+  const opBanner = document.getElementById('operationBanner');
+  if (opBanner) {
+    if (r.detected_operation) {
+      opBanner.style.display = 'block';
+      opBanner.style.borderColor = 'var(--cyan)';
+      opBanner.style.background  = 'rgba(0,212,255,0.05)';
+      opBanner.innerHTML = `<span style="font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase;">◈ Auto-Detected Conversion Tool</span><br><span style="font-size:13px;color:var(--text);line-height:1.6;display:block;margin-top:4px;">${r.detected_operation}</span>`;
+    } else if (r.operation_note) {
+      opBanner.style.display = 'block';
+      opBanner.style.borderColor = '#ffaa00';
+      opBanner.style.background  = 'rgba(255,170,0,0.05)';
+      opBanner.innerHTML = `<span style="font-family:var(--mono);font-size:10px;letter-spacing:2px;color:#ffaa00;text-transform:uppercase;">◈ Conversion Tool Note</span><br><span style="font-size:13px;color:var(--text);line-height:1.6;display:block;margin-top:4px;">${r.operation_note}</span>`;
+    } else {
+      opBanner.style.display = 'none';
+    }
+  }
+
   // Build the two-screen categorized layout
   document.getElementById('settingsGrid').innerHTML = `
     <div style="grid-column:1/-1;">
@@ -1850,21 +2047,42 @@ function renderResults(r) {
         <h3>Screen 1 — Import Raster Image</h3>
       </div>
 
-      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Parameters</div>
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Conversion Tool</div>
       <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Tool', s1.conversion_tool, '')}
+        ${s1.conversion_tool === 'Line To Line Tracing' && s1.direction ? settingRow('Direction', s1.direction, '') : ''}
+        ${s1.conversion_tool === '1bit BW Dithering' && s1.dither_algorithm ? settingRow('Dither Algorithm', s1.dither_algorithm, '') : ''}
+        ${(s1.conversion_tool === 'Line To Line Tracing' && s2.laser_mode !== 'M4 Dynamic' || s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') && s1.bw_threshold_value != null ? settingRow('BW Threshold', s1.bw_threshold_value, '/ 255') : ''}
+        ${(s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') && s1.bw_conversion != null ? settingRow('B&W', s1.bw_conversion ? 'Yes' : 'No', '') : ''}
+        ${(s1.conversion_tool === 'Line To Line Tracing' || s1.conversion_tool === '1bit BW Dithering') && s1.lines_per_mm ? settingRow('Lines / mm', s1.lines_per_mm, 'l/mm') : ''}
+      </div>
+
+      ${s1.conversion_tool === 'Vectorize!' ? `
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Vectorize! Options</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Spot Removal', s1.spot_removal ?? '—', '/ 100')}
+        ${settingRow('Smoothing', s1.smoothing ?? '—', '/ 100')}
+        ${settingRow('Optimize', s1.optimize ?? '—', '/ 50')}
+        ${settingRow('Downsampling', s1.downsampling ?? '—', '/ 10')}
+        ${settingRow('Adaptive Quality', s1.adaptive_quality ? 'Yes' : 'No', '')}
+        ${settingRow('Optimize Travel', s1.optimize_travel ? 'Yes' : 'No', '')}
+        ${settingRow('Filling', s1.filling ?? 'No Filling', '')}
+      </div>` : ''}
+
+      ${s1.conversion_tool === 'Centerline' ? `
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Centerline Options</div>
+      <div class="settings-grid" style="margin-bottom:16px;">
+        ${settingRow('Corner Threshold', s1.corner_threshold ?? '—', '/ 360')}
+        ${settingRow('Line Threshold', s1.line_threshold ?? '—', '/ 100')}
+      </div>` : ''}
+
+      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Parameters</div>
+      <div class="settings-grid" style="margin-bottom:24px;">
         ${settingRow('Resize', s1.resize, '')}
         ${settingRow('Grayscale Conversion', s1.grayscale_conversion, '')}
         ${settingRow('Brightness', s1.brightness ?? 114, '/ 160')}
         ${settingRow('Contrast', s1.contrast ?? 113, '/ 160')}
         ${settingRow('White Clip', s1.white_clip ?? 0, '/ 100')}
-        ${s1.conversion_tool === '1bit BW Dithering' && s1.dither_algorithm ? settingRow('Dither Algorithm', s1.dither_algorithm, '') : ''}
-        ${(s1.conversion_tool === 'Line To Line' || s1.conversion_tool === 'Vectorize!' || s1.conversion_tool === 'Centerline') ? settingRow('BW Threshold', s1.bw_threshold_value ?? 128, '/ 255') : ''}
-      </div>
-
-      <div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Conversion Tool</div>
-      <div class="settings-grid" style="margin-bottom:24px;">
-        ${settingRow('Tool', s1.conversion_tool, '')}
-        ${settingRow('Lines / mm', s1.lines_per_mm, 'l/mm')}
       </div>
 
       <div class="analysis-section" style="margin-bottom:8px;">
@@ -1944,7 +2162,7 @@ function downloadFile(filename, content, mime) {
 function getJobLabel() {
   const mat   = document.getElementById('material').value.replace(/_/g,' ');
   const laser = document.getElementById('laserType').value.replace(/_/g,' ');
-  const op    = document.getElementById('operationType').value.replace(/_/g,' ');
+  const op    = document.getElementById('operationType').value;
   return `${laser} / ${mat} / ${op}`;
 }
 
